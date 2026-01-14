@@ -1,5 +1,8 @@
 # better-result
 
+> **New to better-result?** Run `npx better-result init` for interactive setup.
+> **Upgrading from v1?** Run `npx better-result migrate` for guided migration.
+
 Lightweight Result type for TypeScript with generator-based composition.
 
 ## Install
@@ -38,9 +41,12 @@ const message = parsed.match({
 - [Extracting Values](#extracting-values)
 - [Generator Composition](#generator-composition)
 - [Retry Support](#retry-support)
+- [UnhandledException](#unhandledexception)
+- [Panic](#panic)
 - [Tagged Errors](#tagged-errors)
 - [Serialization](#serialization)
 - [API Reference](#api-reference)
+- [Agents & AI](#agents--ai)
 
 ## Creating Results
 
@@ -151,41 +157,136 @@ const result = await Result.tryPromise(() => fetch(url), {
 });
 ```
 
+## UnhandledException
+
+When `Result.try()` or `Result.tryPromise()` catches an exception without a custom handler, the error type is `UnhandledException`:
+
+```ts
+import { Result, UnhandledException } from "better-result";
+
+// Automatic — error type is UnhandledException
+const result = Result.try(() => JSON.parse(input));
+//    ^? Result<unknown, UnhandledException>
+
+// Custom handler — you control the error type
+const result = Result.try({
+  try: () => JSON.parse(input),
+  catch: (e) => new ParseError(e),
+});
+//    ^? Result<unknown, ParseError>
+
+// Same for async
+await Result.tryPromise(() => fetch(url));
+//    ^? Promise<Result<Response, UnhandledException>>
+```
+
+Access the original exception via `.cause`:
+
+```ts
+if (Result.isError(result)) {
+  const original = result.error.cause;
+  if (original instanceof SyntaxError) {
+    // Handle JSON parse error
+  }
+}
+```
+
+## Panic
+
+Thrown (not returned) when user callbacks throw inside Result operations. Represents a defect in your code, not a domain error.
+
+```ts
+import { Panic } from "better-result";
+
+// Callback throws → Panic
+Result.ok(1).map(() => {
+  throw new Error("bug");
+}); // throws Panic
+
+// Generator cleanup throws → Panic
+Result.gen(function* () {
+  try {
+    yield* Result.err("expected failure");
+  } finally {
+    throw new Error("cleanup bug");
+  }
+}); // throws Panic
+
+// Catch handler throws → Panic
+Result.try({
+  try: () => riskyOp(),
+  catch: () => {
+    throw new Error("bug in handler");
+  },
+}); // throws Panic
+```
+
+**Why Panic?** `Err` is for recoverable domain errors. Panic is for bugs — like Rust's `panic!()`. If your `.map()` callback throws, that's not an error to handle, it's a defect to fix. Returning `Err` would collapse type safety (`Result<T, E>` becomes `Result<T, E | unknown>`).
+
+**Panic properties:**
+
+| Property  | Type      | Description                         |
+| --------- | --------- | ----------------------------------- |
+| `message` | `string`  | Describes where/what panicked       |
+| `cause`   | `unknown` | The exception that was thrown       |
+
+Panic also provides `toJSON()` for error reporting services (Sentry, etc.).
+
 ## Tagged Errors
 
 Build exhaustive error handling with discriminated unions:
 
 ```ts
-import { TaggedError } from "better-result";
+import { TaggedError, matchError, matchErrorPartial } from "better-result";
 
-class NotFoundError extends TaggedError {
-  readonly _tag = "NotFoundError" as const;
-  constructor(readonly id: string) {
-    super(`Not found: ${id}`);
-  }
-}
+// Factory API: TaggedError("Tag")<Props>()
+class NotFoundError extends TaggedError("NotFoundError")<{
+  id: string;
+  message: string;
+}>() {}
 
-class ValidationError extends TaggedError {
-  readonly _tag = "ValidationError" as const;
-  constructor(readonly field: string) {
-    super(`Invalid: ${field}`);
-  }
-}
+class ValidationError extends TaggedError("ValidationError")<{
+  field: string;
+  message: string;
+}>() {}
 
 type AppError = NotFoundError | ValidationError;
 
+// Create errors with object args
+const err = new NotFoundError({ id: "123", message: "User not found" });
+
 // Exhaustive matching
-TaggedError.match(error, {
+matchError(error, {
   NotFoundError: (e) => `Missing: ${e.id}`,
   ValidationError: (e) => `Bad field: ${e.field}`,
 });
 
 // Partial matching with fallback
-TaggedError.matchPartial(
+matchErrorPartial(
   error,
   { NotFoundError: (e) => `Missing: ${e.id}` },
-  (e) => `Unknown error: ${e.message}`,
+  (e) => `Unknown: ${e.message}`,
 );
+
+// Type guards
+TaggedError.is(value); // any tagged error
+NotFoundError.is(value); // specific class
+```
+
+For errors with computed messages, add a custom constructor:
+
+```ts
+class NetworkError extends TaggedError("NetworkError")<{
+  url: string;
+  status: number;
+  message: string;
+}>() {
+  constructor(args: { url: string; status: number }) {
+    super({ ...args, message: `Request to ${args.url} failed: ${args.status}` });
+  }
+}
+
+new NetworkError({ url: "/api", status: 404 });
 ```
 
 ## Serialization
@@ -243,12 +344,70 @@ const rehydrated = Result.hydrate(JSON.parse(JSON.stringify(errResult)));
 
 ### TaggedError
 
-| Method                                     | Description                          |
-| ------------------------------------------ | ------------------------------------ |
-| `TaggedError.isError(value)`               | Type guard for Error                 |
-| `TaggedError.isTaggedError(value)`         | Type guard for TaggedError           |
-| `TaggedError.match(error, handlers)`       | Exhaustive pattern match by `_tag`   |
-| `TaggedError.matchPartial(error, h, else)` | Partial match with fallback          |
+| Method                                  | Description                        |
+| --------------------------------------- | ---------------------------------- |
+| `TaggedError(tag)<Props>()`             | Factory for tagged error class     |
+| `TaggedError.is(value)`                 | Type guard for any TaggedError     |
+| `matchError(err, handlers)`             | Exhaustive pattern match by `_tag` |
+| `matchErrorPartial(err, handlers, fb)`  | Partial match with fallback        |
+| `isTaggedError(value)`                  | Type guard (standalone function)   |
+| `panic(message, cause?)`                | Throw unrecoverable Panic          |
+| `isPanic(value)`                        | Type guard for Panic               |
+
+### Type Helpers
+
+| Type           | Description                   |
+| -------------- | ----------------------------- |
+| `InferOk<R>`   | Extract Ok type from Result   |
+| `InferErr<R>`  | Extract Err type from Result  |
+
+## Agents & AI
+
+better-result ships with skills for AI coding agents (OpenCode, Claude Code, Codex).
+
+### Quick Start
+
+```sh
+npx better-result init
+```
+
+Interactive setup that:
+
+1. Installs the better-result package
+2. Optionally fetches source code via [opensrc](https://github.com/anthropics/opensrc) for better AI context
+3. Installs the adoption skill + `/adopt-better-result` command for your agent
+4. Optionally launches your agent
+
+### What the skill does
+
+The `/adopt-better-result` command guides your AI agent through:
+
+- Converting try/catch to Result.try/tryPromise
+- Defining TaggedError classes for domain errors
+- Refactoring to generator composition
+- Migrating null checks to Result types
+
+### Supported agents
+
+| Agent    | Config detected          | Skill location                     |
+| -------- | ------------------------ | ---------------------------------- |
+| OpenCode | `.opencode/`             | `.opencode/skill/better-result-adopt/` |
+| Claude   | `.claude/`, `CLAUDE.md`  | `.claude/skills/better-result-adopt/`  |
+| Codex    | `.codex/`, `AGENTS.md`   | `.codex/skills/better-result-adopt/`   |
+
+### Manual usage
+
+If you prefer not to use the interactive CLI:
+
+```sh
+# Install package
+npm install better-result
+
+# Add source for AI context (optional)
+npx opensrc better-result
+
+# Then copy skills/ directory to your agent's skill folder
+```
 
 ## License
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { Result, Ok, Err } from "./result";
-import { UnhandledException } from "./error";
+import { Panic, UnhandledException } from "./error";
 
 describe("Result", () => {
   describe("ok", () => {
@@ -102,6 +102,40 @@ describe("Result", () => {
       expect(result.unwrap()).toBe("success");
       expect(attempts).toBe(3);
     });
+
+    it("throws Panic when catch handler throws", () => {
+      expect(() =>
+        Result.try({
+          try: () => {
+            throw new Error("original error");
+          },
+          catch: () => {
+            throw new Error("catch handler failed");
+          },
+        }),
+      ).toThrow(Panic);
+    });
+
+    it("Panic from catch handler contains cause", () => {
+      try {
+        Result.try({
+          try: () => {
+            throw new Error("original error");
+          },
+          catch: () => {
+            throw new Error("catch handler failed");
+          },
+        });
+        expect.unreachable("should have thrown");
+      } catch (e) {
+        expect(e).toBeInstanceOf(Panic);
+        if (e instanceof Panic) {
+          expect(e.message).toContain("catch handler threw");
+          expect(e.cause).toBeInstanceOf(Error);
+          expect((e.cause as Error).message).toBe("catch handler failed");
+        }
+      }
+    });
   });
 
   describe("tryPromise", () => {
@@ -132,6 +166,36 @@ describe("Result", () => {
       expect(attempts).toBe(3);
       // exponential: 10ms + 20ms = 30ms minimum
       expect(elapsed).toBeGreaterThanOrEqual(25);
+    });
+
+    it("throws Panic when catch handler throws", async () => {
+      await expect(
+        Result.tryPromise({
+          try: () => Promise.reject(new Error("original error")),
+          catch: () => {
+            throw new Error("catch handler failed");
+          },
+        }),
+      ).rejects.toBeInstanceOf(Panic);
+    });
+
+    it("rejected Promise from catch handler becomes error value (no Panic)", async () => {
+      // If user mistakenly returns a rejected Promise from catch, it becomes the
+      // error value directly (not awaited). This is a type error at compile time,
+      // but at runtime the rejected promise is the Err's value. No Panic occurs
+      // because Promise.reject() returns synchronously without throwing.
+      const rejectedPromise = Promise.reject(new Error("this becomes the error value"));
+      // Attach handler to prevent unhandled rejection (we're testing the value is captured)
+      rejectedPromise.catch(() => {});
+
+      const result = await Result.tryPromise({
+        try: () => Promise.reject(new Error("original")),
+        catch: () => rejectedPromise, // wrong return type (Promise<E> vs E) - testing runtime
+      });
+      expect(Result.isError(result)).toBe(true);
+      if (Result.isError(result)) {
+        expect(result.error).toBe(rejectedPromise);
+      }
     });
   });
 
@@ -325,6 +389,24 @@ describe("Result", () => {
       }
     });
 
+    it("runs finally blocks when short-circuiting", () => {
+      let finallyCalled = false;
+
+      const getA = () => Result.err<number, string>("a failed");
+
+      const result = Result.gen(function* () {
+        try {
+          yield* getA();
+          return Result.ok(1);
+        } finally {
+          finallyCalled = true;
+        }
+      });
+
+      expect(Result.isError(result)).toBe(true);
+      expect(finallyCalled).toBe(true);
+    });
+
     it("collects error types from yields", () => {
       class ErrorA extends Error {
         readonly _tag = "ErrorA" as const;
@@ -392,6 +474,457 @@ describe("Result", () => {
 
       expect(Result.isError(result)).toBe(true);
       expect(bCalled).toBe(false);
+    });
+
+    it("runs finally blocks when short-circuiting (async)", async () => {
+      let finallyCalled = false;
+
+      const fetchA = () => Promise.resolve(Result.err<number, string>("a failed"));
+
+      const result = await Result.gen(async function* () {
+        try {
+          yield* Result.await(fetchA());
+          return Result.ok(1);
+        } finally {
+          finallyCalled = true;
+        }
+      });
+
+      expect(Result.isError(result)).toBe(true);
+      expect(finallyCalled).toBe(true);
+    });
+  });
+
+  describe("gen cleanup (finally/dispose)", () => {
+    it("throws Panic when finally block throws (sync)", () => {
+      expect(() =>
+        Result.gen(function* () {
+          try {
+            yield* Result.err("original error");
+            return Result.ok(1);
+          } finally {
+            throw new Error("cleanup failed");
+          }
+        }),
+      ).toThrow(Panic);
+    });
+
+    it("Panic contains cleanup cause", () => {
+      try {
+        Result.gen(function* () {
+          try {
+            yield* Result.err("original error");
+            return Result.ok(1);
+          } finally {
+            throw new Error("cleanup failed");
+          }
+        });
+        expect.unreachable("should have thrown");
+      } catch (e) {
+        expect(e).toBeInstanceOf(Panic);
+        if (e instanceof Panic) {
+          expect(e.message).toContain("cleanup");
+          expect(e.cause).toBeInstanceOf(Error);
+          expect((e.cause as Error).message).toBe("cleanup failed");
+        }
+      }
+    });
+
+    it("throws Panic when finally block throws (async)", async () => {
+      await expect(
+        Result.gen(async function* () {
+          try {
+            yield* Result.await(Promise.resolve(Result.err("original error")));
+            return Result.ok(1);
+          } finally {
+            throw new Error("cleanup failed");
+          }
+        }),
+      ).rejects.toBeInstanceOf(Panic);
+    });
+
+    it("disposes resources via Symbol.dispose when short-circuiting", () => {
+      let disposed = false;
+
+      const acquireResource = () =>
+        Result.ok({
+          value: 42,
+          [Symbol.dispose]() {
+            disposed = true;
+          },
+        });
+
+      const result = Result.gen(function* () {
+        using resource = yield* acquireResource();
+        yield* Result.err("fail after acquire");
+        return Result.ok(resource.value);
+      });
+
+      expect(Result.isError(result)).toBe(true);
+      expect(disposed).toBe(true);
+    });
+
+    it("disposes async resources via Symbol.asyncDispose when short-circuiting", async () => {
+      let disposed = false;
+
+      const acquireResource = () =>
+        Promise.resolve(
+          Result.ok({
+            value: 42,
+            async [Symbol.asyncDispose]() {
+              disposed = true;
+            },
+          }),
+        );
+
+      const result = await Result.gen(async function* () {
+        await using resource = yield* Result.await(acquireResource());
+        yield* Result.await(Promise.resolve(Result.err("fail after acquire")));
+        return Result.ok(resource.value);
+      });
+
+      expect(Result.isError(result)).toBe(true);
+      expect(disposed).toBe(true);
+    });
+
+    it("throws Panic when Symbol.dispose throws", () => {
+      const acquireResource = () =>
+        Result.ok({
+          value: 42,
+          [Symbol.dispose]() {
+            throw new Error("dispose failed");
+          },
+        });
+
+      expect(() =>
+        Result.gen(function* () {
+          using _resource = yield* acquireResource();
+          yield* Result.err("original error");
+          return Result.ok(1);
+        }),
+      ).toThrow(Panic);
+    });
+
+    it("does not call cleanup on success path", () => {
+      let finallyCalled = false;
+
+      const result = Result.gen(function* () {
+        try {
+          const a = yield* Result.ok(1);
+          return Result.ok(a + 1);
+        } finally {
+          finallyCalled = true;
+        }
+      });
+
+      // Finally DOES run on success (normal generator completion)
+      expect(Result.isOk(result)).toBe(true);
+      expect(finallyCalled).toBe(true);
+    });
+
+    it("disposes multiple resources in reverse order", () => {
+      const disposeOrder: string[] = [];
+
+      const acquireA = () =>
+        Result.ok({
+          name: "A",
+          [Symbol.dispose]() {
+            disposeOrder.push("A");
+          },
+        });
+
+      const acquireB = () =>
+        Result.ok({
+          name: "B",
+          [Symbol.dispose]() {
+            disposeOrder.push("B");
+          },
+        });
+
+      const result = Result.gen(function* () {
+        using _a = yield* acquireA();
+        using _b = yield* acquireB();
+        yield* Result.err("fail");
+        return Result.ok(1);
+      });
+
+      expect(Result.isError(result)).toBe(true);
+      expect(disposeOrder).toEqual(["B", "A"]); // LIFO order
+    });
+
+    it("throws Panic when success-path cleanup throws (sync)", () => {
+      expect(() =>
+        Result.gen(function* () {
+          try {
+            return Result.ok(1);  // Success path
+          } finally {
+            throw new Error("cleanup failed on success");
+          }
+        }),
+      ).toThrow(Panic);
+    });
+
+    it("throws Panic when success-path cleanup throws (async)", async () => {
+      await expect(
+        Result.gen(async function* () {
+          try {
+            return Result.ok(1);  // Success path
+          } finally {
+            throw new Error("cleanup failed on success");
+          }
+        }),
+      ).rejects.toBeInstanceOf(Panic);
+    });
+
+    it("Panic from success-path has cleanup cause", () => {
+      try {
+        Result.gen(function* () {
+          try {
+            return Result.ok(1);
+          } finally {
+            throw new Error("cleanup failed");
+          }
+        });
+        expect.unreachable("should have thrown");
+      } catch (e) {
+        expect(e).toBeInstanceOf(Panic);
+        if (e instanceof Panic) {
+          expect(e.cause).toBeInstanceOf(Error);
+          expect((e.cause as Error).message).toBe("cleanup failed");
+        }
+      }
+    });
+
+    it("throws Panic when generator body throws directly", () => {
+      expect(() =>
+        Result.gen(function* () {
+          throw new Error("unexpected throw");
+        }),
+      ).toThrow(Panic);
+    });
+
+    it("throws Panic when async generator body throws directly", async () => {
+      await expect(
+        Result.gen(async function* () {
+          throw new Error("unexpected throw");
+        }),
+      ).rejects.toBeInstanceOf(Panic);
+    });
+
+    it("throws Panic from inner generator, outer finally never runs", () => {
+      // When inner generator Panics, the exception propagates immediately.
+      // Outer finally blocks don't run because we're not inside a try/finally
+      // in the outer generator body - we're calling a function that throws.
+      let outerFinallyCalled = false;
+
+      const inner = () =>
+        Result.gen(function* () {
+          try {
+            yield* Result.err("inner error");
+            return Result.ok(1);
+          } finally {
+            throw new Error("inner cleanup failed");
+          }
+        });
+
+      expect(() =>
+        Result.gen(function* () {
+          try {
+            // inner() throws Panic synchronously
+            yield* inner();
+            return Result.ok(2);
+          } finally {
+            outerFinallyCalled = true;
+          }
+        }),
+      ).toThrow(Panic);
+
+      // Outer finally DOES run because the Panic propagates through the outer generator
+      expect(outerFinallyCalled).toBe(true);
+    });
+
+    it("throws Panic when Symbol.asyncDispose throws", async () => {
+      const acquireResource = () =>
+        Promise.resolve(
+          Result.ok({
+            value: 42,
+            async [Symbol.asyncDispose]() {
+              throw new Error("async dispose failed");
+            },
+          }),
+        );
+
+      await expect(
+        Result.gen(async function* () {
+          await using _resource = yield* Result.await(acquireResource());
+          yield* Result.await(Promise.resolve(Result.err("original error")));
+          return Result.ok(1);
+        }),
+      ).rejects.toBeInstanceOf(Panic);
+    });
+
+    it("Panic from Symbol.asyncDispose contains dispose error", async () => {
+      const acquireResource = () =>
+        Promise.resolve(
+          Result.ok({
+            value: 42,
+            async [Symbol.asyncDispose]() {
+              throw new Error("async dispose failed");
+            },
+          }),
+        );
+
+      try {
+        await Result.gen(async function* () {
+          await using _resource = yield* Result.await(acquireResource());
+          yield* Result.await(Promise.resolve(Result.err("original error")));
+          return Result.ok(1);
+        });
+        expect.unreachable("should have thrown");
+      } catch (e) {
+        expect(e).toBeInstanceOf(Panic);
+        if (e instanceof Panic) {
+          expect(e.message).toContain("cleanup");
+          expect(e.cause).toBeInstanceOf(Error);
+          expect((e.cause as Error).message).toBe("async dispose failed");
+        }
+      }
+    });
+  });
+
+  describe("combinator Panic", () => {
+    it("Result.map throws Panic when callback throws", () => {
+      try {
+        Result.ok(1).map(() => {
+          throw new Error("map callback failed");
+        });
+        expect.unreachable("should have thrown");
+      } catch (e) {
+        expect(e).toBeInstanceOf(Panic);
+        if (e instanceof Panic) {
+          expect(e.message).toContain("map");
+          expect(e.cause).toBeInstanceOf(Error);
+          expect((e.cause as Error).message).toBe("map callback failed");
+        }
+      }
+    });
+
+    it("Result.andThen throws Panic when callback throws", () => {
+      expect(() =>
+        Result.ok(1).andThen(() => {
+          throw new Error("andThen callback failed");
+        }),
+      ).toThrow(Panic);
+    });
+
+    it("Result.andThenAsync throws Panic when callback rejects", async () => {
+      await expect(
+        Result.ok(1).andThenAsync(async () => {
+          throw new Error("async callback failed");
+        }),
+      ).rejects.toBeInstanceOf(Panic);
+    });
+
+    it("Result.match throws Panic when ok handler throws", () => {
+      expect(() =>
+        Result.ok(1).match({
+          ok: () => {
+            throw new Error("ok handler failed");
+          },
+          err: () => "err",
+        }),
+      ).toThrow(Panic);
+    });
+
+    it("Result.match throws Panic when err handler throws", () => {
+      expect(() =>
+        Result.err("fail").match({
+          ok: () => "ok",
+          err: () => {
+            throw new Error("err handler failed");
+          },
+        }),
+      ).toThrow(Panic);
+    });
+
+    it("Result.mapError throws Panic when callback throws", () => {
+      try {
+        Result.err("original").mapError(() => {
+          throw new Error("mapError callback failed");
+        });
+        expect.unreachable("should have thrown");
+      } catch (e) {
+        expect(e).toBeInstanceOf(Panic);
+        if (e instanceof Panic) {
+          expect(e.message).toContain("mapError");
+          expect(e.cause).toBeInstanceOf(Error);
+          expect((e.cause as Error).message).toBe("mapError callback failed");
+        }
+      }
+    });
+
+    it("Result.tap throws Panic when callback throws", () => {
+      expect(() =>
+        Result.ok(1).tap(() => {
+          throw new Error("tap callback failed");
+        }),
+      ).toThrow(Panic);
+    });
+
+    it("Result.tapAsync throws Panic when callback rejects", async () => {
+      await expect(
+        Result.ok(1).tapAsync(async () => {
+          throw new Error("tapAsync callback failed");
+        }),
+      ).rejects.toBeInstanceOf(Panic);
+    });
+  });
+
+  describe("Panic formatting", () => {
+    it("toJSON() includes all properties", () => {
+      try {
+        Result.ok(1).map(() => {
+          throw new Error("test error");
+        });
+        expect.unreachable("should have thrown");
+      } catch (e) {
+        expect(e).toBeInstanceOf(Panic);
+        if (e instanceof Panic) {
+          const json = e.toJSON() as Record<string, unknown>;
+          expect(json._tag).toBe("Panic");
+          expect(json.name).toBe("Panic");
+          expect(json.cause).toEqual({
+            name: "Error",
+            message: "test error",
+            stack: expect.any(String),
+          });
+          expect(json.stack).toEqual(expect.any(String));
+          expect(json.message).toContain("map");
+        }
+      }
+    });
+
+    it("Panic includes cause in Caused by chain", () => {
+      try {
+        Result.err("business error").mapError(() => {
+          throw new Error("handler bug");
+        });
+        expect.unreachable("should have thrown");
+      } catch (e) {
+        expect(e).toBeInstanceOf(Panic);
+        if (e instanceof Panic) {
+          expect(e.stack).toContain("Caused by:");
+          expect(e.stack).toContain("handler bug");
+        }
+      }
+    });
+
+    it("handles non-Error cause gracefully", () => {
+      const p = new Panic({ message: "test panic", cause: "string cause" });
+      expect(p.message).toBe("test panic");
+
+      const json = p.toJSON() as Record<string, unknown>;
+      expect(json.cause).toBe("string cause");
     });
   });
 

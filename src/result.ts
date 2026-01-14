@@ -1,5 +1,23 @@
-import { UnhandledException } from "./error";
+import { panic, UnhandledException } from "./error";
 import { dual } from "./dual";
+
+/** Executes fn, panics if it throws. */
+const tryOrPanic = <T>(fn: () => T, message: string): T => {
+  try {
+    return fn();
+  } catch (cause) {
+    throw panic(message, cause);
+  }
+};
+
+/** Async version of tryOrPanic. */
+const tryOrPanicAsync = async <T>(fn: () => Promise<T>, message: string): Promise<T> => {
+  try {
+    return await fn();
+  } catch (cause) {
+    throw panic(message, cause);
+  }
+};
 
 /**
  * Successful result variant.
@@ -22,12 +40,13 @@ export class Ok<A, E = never> {
    * @template B Transformed type.
    * @param fn Transformation function.
    * @returns Ok with transformed value.
+   * @throws {Panic} If fn throws.
    *
    * @example
    * ok(2).map(x => x * 2) // Ok(4)
    */
   map<B>(fn: (a: A) => B): Ok<B, E> {
-    return new Ok<B, E>(fn(this.value));
+    return tryOrPanic(() => new Ok<B, E>(fn(this.value)), "map callback threw");
   }
 
   /**
@@ -49,12 +68,13 @@ export class Ok<A, E = never> {
    * @template E2 New error type.
    * @param fn Function returning Result.
    * @returns Result from fn.
+   * @throws {Panic} If fn throws.
    *
    * @example
    * ok(2).andThen(x => x > 0 ? ok(x) : err("negative")) // Ok(2)
    */
   andThen<B, E2>(fn: (a: A) => Result<B, E2>): Result<B, E | E2> {
-    return fn(this.value);
+    return tryOrPanic(() => fn(this.value), "andThen callback threw");
   }
 
   /**
@@ -64,12 +84,13 @@ export class Ok<A, E = never> {
    * @template E2 New error type.
    * @param fn Async function returning Result.
    * @returns Promise of Result from fn.
+   * @throws {Panic} If fn throws synchronously or rejects.
    *
    * @example
    * await ok(1).andThenAsync(async x => ok(await fetchData(x)))
    */
   andThenAsync<B, E2>(fn: (a: A) => Promise<Result<B, E2>>): Promise<Result<B, E | E2>> {
-    return fn(this.value);
+    return tryOrPanicAsync(() => fn(this.value), "andThenAsync callback threw");
   }
 
   /**
@@ -78,12 +99,13 @@ export class Ok<A, E = never> {
    * @template T Return type.
    * @param handlers Ok and err handlers.
    * @returns Result of ok handler.
+   * @throws {Panic} If handler throws.
    *
    * @example
    * ok(2).match({ ok: x => x * 2, err: () => 0 }) // 4
    */
   match<T>(handlers: { ok: (a: A) => T; err: (e: never) => T }): T {
-    return handlers.ok(this.value);
+    return tryOrPanic(() => handlers.ok(this.value), "match ok handler threw");
   }
 
   /**
@@ -118,13 +140,16 @@ export class Ok<A, E = never> {
    *
    * @param fn Side effect function.
    * @returns Self.
+   * @throws {Panic} If fn throws.
    *
    * @example
    * ok(2).tap(console.log).map(x => x * 2) // logs 2, returns Ok(4)
    */
   tap(fn: (a: A) => void): Ok<A, E> {
-    fn(this.value);
-    return this;
+    return tryOrPanic(() => {
+      fn(this.value);
+      return this;
+    }, "tap callback threw");
   }
 
   /**
@@ -132,13 +157,16 @@ export class Ok<A, E = never> {
    *
    * @param fn Async side effect function.
    * @returns Promise of self.
+   * @throws {Panic} If fn throws synchronously or rejects.
    *
    * @example
    * await ok(2).tapAsync(async x => await log(x))
    */
-  async tapAsync(fn: (a: A) => Promise<void>): Promise<Ok<A, E>> {
-    await fn(this.value);
-    return this;
+  tapAsync(fn: (a: A) => Promise<void>): Promise<Ok<A, E>> {
+    return tryOrPanicAsync(async () => {
+      await fn(this.value);
+      return this;
+    }, "tapAsync callback threw");
   }
 
   /**
@@ -185,12 +213,13 @@ export class Err<T, E> {
    * @template E2 Transformed error type.
    * @param fn Transformation function.
    * @returns Err with transformed error.
+   * @throws {Panic} If fn throws.
    *
    * @example
    * err("fail").mapError(e => new Error(e)) // Err(Error("fail"))
    */
   mapError<E2>(fn: (e: E) => E2): Err<T, E2> {
-    return new Err<T, E2>(fn(this.error));
+    return tryOrPanic(() => new Err<T, E2>(fn(this.error)), "mapError callback threw");
   }
 
   /**
@@ -225,12 +254,13 @@ export class Err<T, E> {
    * @template R Return type.
    * @param handlers Ok and err handlers.
    * @returns Result of err handler.
+   * @throws {Panic} If handler throws.
    *
    * @example
    * err("fail").match({ ok: x => x, err: e => e.length }) // 4
    */
   match<R>(handlers: { ok: (a: T) => R; err: (e: E) => R }): R {
-    return handlers.err(this.error);
+    return tryOrPanic(() => handlers.err(this.error), "match err handler threw");
   }
 
   /**
@@ -319,16 +349,16 @@ export type Result<T, E> = Ok<T, E> | Err<T, E>;
 type InferYieldErr<Y> = Y extends Err<never, infer E> ? E : never;
 
 /**
- * Extracts success type T from any Ok in a union.
- * Distributive: InferResultOk<Ok<A, X> | Ok<B, Y>> = A | B
+ * Infer the Ok value type from a Result.
+ * Distributive: InferOk<Ok<A, X> | Ok<B, Y>> = A | B
  */
-type InferResultOk<R> = R extends Ok<infer T, unknown> ? T : never;
+export type InferOk<R> = R extends Ok<infer T, unknown> ? T : never;
 
 /**
- * Extracts error type E from any Err in a union.
- * Distributive: InferResultErr<Err<X, A> | Err<Y, B>> = A | B
+ * Infer the Err value type from a Result.
+ * Distributive: InferErr<Err<X, A> | Err<Y, B>> = A | B
  */
-type InferResultErr<R> = R extends Err<unknown, infer E> ? E : never;
+export type InferErr<R> = R extends Err<unknown, infer E> ? E : never;
 
 /**
  * Constraint for any union of Ok/Err types.
@@ -368,8 +398,13 @@ const tryFn: {
     }
     try {
       return ok(options.try());
-    } catch (cause) {
-      return err(options.catch(cause));
+    } catch (originalCause) {
+      // If the user's catch handler throws, it's a defect — Panic
+      try {
+        return err(options.catch(originalCause));
+      } catch (catchHandlerError) {
+        throw panic("Result.try catch handler threw", catchHandlerError);
+      }
     }
   };
 
@@ -411,8 +446,13 @@ const tryPromise: {
     }
     try {
       return ok(await options.try());
-    } catch (cause) {
-      return err(options.catch(cause));
+    } catch (originalCause) {
+      // If the user's catch handler throws, it's a defect — Panic
+      try {
+        return err(options.catch(originalCause));
+      } catch (catchHandlerError) {
+        throw panic("Result.tryPromise catch handler threw", catchHandlerError);
+      }
     }
   };
 
@@ -535,18 +575,18 @@ const unwrapOr: {
 const gen: {
   <Yield extends Err<never, unknown>, R extends AnyResult>(
     body: () => Generator<Yield, R, unknown>,
-  ): Result<InferResultOk<R>, InferYieldErr<Yield> | InferResultErr<R>>;
+  ): Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
   <Yield extends Err<never, unknown>, R extends AnyResult, This>(
     body: (this: This) => Generator<Yield, R, unknown>,
     thisArg: This,
-  ): Result<InferResultOk<R>, InferYieldErr<Yield> | InferResultErr<R>>;
+  ): Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
   <Yield extends Err<never, unknown>, R extends AnyResult>(
     body: () => AsyncGenerator<Yield, R, unknown>,
-  ): Promise<Result<InferResultOk<R>, InferYieldErr<Yield> | InferResultErr<R>>>;
+  ): Promise<Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
   <Yield extends Err<never, unknown>, R extends AnyResult, This>(
     body: (this: This) => AsyncGenerator<Yield, R, unknown>,
     thisArg: This,
-  ): Promise<Result<InferResultOk<R>, InferYieldErr<Yield> | InferResultErr<R>>>;
+  ): Promise<Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
 } = (<Yield extends Err<never, unknown>, R extends AnyResult, This>(
   body:
     | (() => Generator<Yield, R, unknown>)
@@ -554,7 +594,7 @@ const gen: {
     | ((this: This) => Generator<Yield, R, unknown>)
     | ((this: This) => AsyncGenerator<Yield, R, unknown>),
   thisArg?: This,
-): Result<InferResultOk<R>, InferYieldErr<Yield> | InferResultErr<R>> | Promise<Result<InferResultOk<R>, InferYieldErr<Yield> | InferResultErr<R>>> => {
+): Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>> | Promise<Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>> => {
   // SAFETY: body.call binds thisArg; cast needed due to union of function signatures
   const iterator = (body as (this: This) => Generator<Yield, R, unknown>).call(
     thisArg as This,
@@ -565,33 +605,71 @@ const gen: {
     return (async () => {
       // SAFETY: Async check above guarantees this is an async generator
       const asyncIter = iterator as unknown as AsyncGenerator<Yield, R, unknown>;
-      const state = await asyncIter.next();
+
+      let state: IteratorResult<Yield, R>;
+      try {
+        state = await asyncIter.next();
+      } catch (cause) {
+        // Generator body threw before yielding (user code error or cleanup on success path)
+        throw panic("generator body threw", cause);
+      }
+
       assertIsResult(state.value);
-      return state.value as Result<InferResultOk<R>, InferYieldErr<Yield> | InferResultErr<R>>;
+
+      if (!state.done) {
+        // Close generator to run finally blocks and Symbol.asyncDispose.
+        // If cleanup throws, it's unrecoverable — Panic.
+        try {
+          await asyncIter.return?.(undefined as unknown as R);
+        } catch (cause) {
+          throw panic("generator cleanup threw", cause);
+        }
+      }
+
+      return state.value as Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
     })();
   }
 
   // Sync generator
   // SAFETY: If not async, must be sync generator
   const syncIter = iterator as Generator<Yield, R, unknown>;
-  const state = syncIter.next();
+
+  let state: IteratorResult<Yield, R>;
+  try {
+    state = syncIter.next();
+  } catch (cause) {
+    // Generator body threw before yielding (user code error or cleanup on success path)
+    throw panic("generator body threw", cause);
+  }
+
   assertIsResult(state.value);
-  return state.value as Result<InferResultOk<R>, InferYieldErr<Yield> | InferResultErr<R>>;
+
+  if (!state.done) {
+    // Close generator to run finally blocks and Symbol.dispose.
+    // If cleanup throws, it's unrecoverable — Panic.
+    try {
+      syncIter.return?.(undefined as unknown as R);
+    } catch (cause) {
+      throw panic("generator cleanup threw", cause);
+    }
+  }
+
+  return state.value as Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
 }) as {
   <Yield extends Err<never, unknown>, R extends AnyResult>(
     body: () => Generator<Yield, R, unknown>,
-  ): Result<InferResultOk<R>, InferYieldErr<Yield> | InferResultErr<R>>;
+  ): Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
   <Yield extends Err<never, unknown>, R extends AnyResult, This>(
     body: (this: This) => Generator<Yield, R, unknown>,
     thisArg: This,
-  ): Result<InferResultOk<R>, InferYieldErr<Yield> | InferResultErr<R>>;
+  ): Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
   <Yield extends Err<never, unknown>, R extends AnyResult>(
     body: () => AsyncGenerator<Yield, R, unknown>,
-  ): Promise<Result<InferResultOk<R>, InferYieldErr<Yield> | InferResultErr<R>>>;
+  ): Promise<Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
   <Yield extends Err<never, unknown>, R extends AnyResult, This>(
     body: (this: This) => AsyncGenerator<Yield, R, unknown>,
     thisArg: This,
-  ): Promise<Result<InferResultOk<R>, InferYieldErr<Yield> | InferResultErr<R>>>;
+  ): Promise<Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
 };
 
 async function* resultAwait<T, E>(

@@ -1,6 +1,6 @@
 {
   "name": "better-result",
-  "version": "1.0.1",
+  "version": "2.0.0",
   "description": "Lightweight Result type with generator-based composition",
   "keywords": [
     "error-handling",
@@ -21,8 +21,13 @@
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "skills",
+    "bin"
   ],
+  "bin": {
+    "better-result": "./bin/cli.mjs"
+  },
   "type": "module",
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
@@ -36,7 +41,7 @@
   "scripts": {
     "build": "tsdown",
     "prepublishOnly": "bun run build",
-    "test": "bun test",
+    "test": "bun test src/",
     "check": "tsc --noEmit",
     "publish": "npm publish",
     "lint": "oxlint .",
@@ -49,5 +54,8 @@
     "oxlint": "^1.38.0",
     "tsdown": "^0.19.0-beta.5",
     "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.11.0"
   }
 }
