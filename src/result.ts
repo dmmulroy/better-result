@@ -679,18 +679,20 @@ async function* resultAwait<T, E>(
   return yield* result;
 }
 
-/** Shape of a serialized Result over RPC. */
-interface SerializedOk<T> {
+/** Shape of a serialized Ok over RPC. */
+export interface SerializedOk<T> {
   status: "ok";
   value: T;
 }
 
-interface SerializedErr<E> {
+/** Shape of a serialized Err over RPC. */
+export interface SerializedErr<E> {
   status: "error";
   error: E;
 }
 
-type SerializedResult<T, E> = SerializedOk<T> | SerializedErr<E>;
+/** Shape of a serialized Result over RPC. */
+export type SerializedResult<T, E> = SerializedOk<T> | SerializedErr<E>;
 
 function isSerializedResult(obj: unknown): obj is SerializedResult<unknown, unknown> {
   return (
@@ -701,13 +703,26 @@ function isSerializedResult(obj: unknown): obj is SerializedResult<unknown, unkn
   );
 }
 
-const hydrate = <T, E>(value: unknown): Result<T, E> | null => {
+const serialize = <T, E>(result: Result<T, E>): SerializedResult<T, E> => {
+  return result.status === "ok"
+    ? { status: "ok", value: result.value }
+    : { status: "error", error: result.error };
+};
+
+const deserialize = <T, E>(value: unknown): Result<T, E> | null => {
   if (isSerializedResult(value)) {
     return value.status === "ok"
       ? (new Ok(value.value) as Result<T, E>)
       : (new Err(value.error) as Result<T, E>);
   }
   return null;
+};
+
+/**
+ * @deprecated Use `Result.deserialize` instead. Will be removed in 3.0.
+ */
+const hydrate = <T, E>(value: unknown): Result<T, E> | null => {
+  return deserialize(value);
 };
 
 /**
@@ -857,11 +872,22 @@ export const Result = {
    */
   await: resultAwait,
   /**
+   * Converts a Result to a plain object for serialization (e.g., RPC, server actions).
+   *
+   * @example
+   * const serialized = Result.serialize(ok(42)); // { status: "ok", value: 42 }
+   */
+  serialize,
+  /**
    * Rehydrates serialized Result from RPC back into Ok/Err instances.
    * Returns null if not a serialized Result.
    *
    * @example
-   * const hydrated = Result.hydrate(rpcResponse);
+   * const result = Result.deserialize<User, Error>(rpcResponse);
+   */
+  deserialize,
+  /**
+   * @deprecated Use `Result.deserialize` instead. Will be removed in 3.0.
    */
   hydrate,
 } as const;

@@ -928,7 +928,100 @@ describe("Result", () => {
     });
   });
 
-  describe("hydrate", () => {
+  describe("serialize", () => {
+    it("serializes Ok to plain object", () => {
+      const result = Result.ok(42);
+      const serialized = Result.serialize(result);
+      expect(serialized).toEqual({ status: "ok", value: 42 });
+    });
+
+    it("serializes Err to plain object", () => {
+      const result = Result.err("fail");
+      const serialized = Result.serialize(result);
+      expect(serialized).toEqual({ status: "error", error: "fail" });
+    });
+
+    it("serializes complex values", () => {
+      const result = Result.ok({ id: 1, name: "test", nested: { a: [1, 2, 3] } });
+      const serialized = Result.serialize(result);
+      expect(serialized).toEqual({
+        status: "ok",
+        value: { id: 1, name: "test", nested: { a: [1, 2, 3] } },
+      });
+    });
+
+    it("serializes null and undefined values", () => {
+      expect(Result.serialize(Result.ok(null))).toEqual({ status: "ok", value: null });
+      expect(Result.serialize(Result.ok(undefined))).toEqual({ status: "ok", value: undefined });
+    });
+  });
+
+  describe("deserialize", () => {
+    it("deserializes Ok object to Ok instance", () => {
+      const serialized = { status: "ok" as const, value: 42 };
+      const result = Result.deserialize<number, string>(serialized);
+      expect(result).not.toBe(null);
+      expect(result).toBeInstanceOf(Ok);
+      expect(result?.unwrap()).toBe(42);
+    });
+
+    it("deserializes Err object to Err instance", () => {
+      const serialized = { status: "error" as const, error: "fail" };
+      const result = Result.deserialize<number, string>(serialized);
+      expect(result).not.toBe(null);
+      expect(result).toBeInstanceOf(Err);
+      if (result && Result.isError(result)) {
+        expect(result.error).toBe("fail");
+      }
+    });
+
+    it("returns null for non-Result objects", () => {
+      expect(Result.deserialize({ foo: "bar" })).toBe(null);
+      expect(Result.deserialize(null)).toBe(null);
+      expect(Result.deserialize(42)).toBe(null);
+      expect(Result.deserialize({ status: "ok" })).toBe(null); // missing value
+      expect(Result.deserialize({ status: "error" })).toBe(null); // missing error
+    });
+
+    it("deserializes complex values", () => {
+      const serialized = { status: "ok" as const, value: { id: 1, items: [1, 2] } };
+      const result = Result.deserialize<{ id: number; items: number[] }, string>(serialized);
+      expect(result?.unwrap()).toEqual({ id: 1, items: [1, 2] });
+    });
+  });
+
+  describe("serialize/deserialize roundtrip", () => {
+    it("roundtrips Ok", () => {
+      const original = Result.ok({ id: 42, name: "test" });
+      const serialized = Result.serialize(original);
+      const deserialized = Result.deserialize<{ id: number; name: string }, never>(serialized);
+
+      expect(deserialized).toBeInstanceOf(Ok);
+      expect(deserialized?.unwrap()).toEqual({ id: 42, name: "test" });
+    });
+
+    it("roundtrips Err", () => {
+      const original = Result.err({ code: "NOT_FOUND", message: "User not found" });
+      const serialized = Result.serialize(original);
+      const deserialized = Result.deserialize<never, { code: string; message: string }>(serialized);
+
+      expect(deserialized).toBeInstanceOf(Err);
+      if (deserialized && Result.isError(deserialized)) {
+        expect(deserialized.error).toEqual({ code: "NOT_FOUND", message: "User not found" });
+      }
+    });
+
+    it("roundtrips through JSON.stringify/parse", () => {
+      const original = Result.ok({ id: 1, data: [1, 2, 3] });
+      const json = JSON.stringify(Result.serialize(original));
+      const parsed = JSON.parse(json);
+      const deserialized = Result.deserialize<{ id: number; data: number[] }, never>(parsed);
+
+      expect(deserialized?.unwrap()).toEqual({ id: 1, data: [1, 2, 3] });
+    });
+  });
+
+  describe("hydrate (deprecated)", () => {
     it("hydrates serialized Ok", () => {
       const serialized = { status: "ok" as const, value: 42 };
       const result = Result.hydrate<number, string>(serialized);

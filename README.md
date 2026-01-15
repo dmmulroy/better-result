@@ -298,25 +298,29 @@ new NetworkError({ url: "/api", status: 404 });
 
 ## Serialization
 
-Rehydrate Results from JSON for storage or network transfer:
+Convert Results to plain objects for RPC, storage, or server actions:
 
 ```ts
-// Serialize a Result to JSON (e.g., for storage or network transfer)
-const original = Result.ok(42);
-const serialized = JSON.stringify(original);
-// '{"_tag":"Ok","value":42}'
+import { Result, SerializedResult } from "better-result";
 
-// Rehydrate the serialized Result back to a Result instance
-const hydrated = Result.hydrate(JSON.parse(serialized));
-// Result<number, never>
+// Serialize to plain object
+const result = Result.ok(42);
+const serialized = Result.serialize(result);
+// { status: "ok", value: 42 }
 
-// Now you can use Result methods again
-const doubled = hydrated.map((x) => x * 2); // Ok(84)
+// Deserialize back to Result instance
+const deserialized = Result.deserialize<number, never>(serialized);
+// Ok(42) - can use .map(), .andThen(), etc.
 
-// Works with Err too
-const errResult = Result.err(new Error("failed"));
-const rehydrated = Result.hydrate(JSON.parse(JSON.stringify(errResult)));
-// Result<never, Error>
+// Typed boundary for Next.js server actions
+async function createUser(data: FormData): Promise<SerializedResult<User, ValidationError>> {
+  const result = await validateAndCreate(data);
+  return Result.serialize(result);
+}
+
+// Client-side
+const serialized = await createUser(formData);
+const result = Result.deserialize<User, ValidationError>(serialized);
 ```
 
 ## API Reference
@@ -333,7 +337,8 @@ const rehydrated = Result.hydrate(JSON.parse(JSON.stringify(errResult)));
 | `Result.isError(result)`         | Type guard for Err                      |
 | `Result.gen(fn)`                 | Generator composition                   |
 | `Result.await(promise)`          | Wrap Promise<Result> for generators     |
-| `Result.hydrate(value)`          | Rehydrate serialized Result             |
+| `Result.serialize(result)`       | Convert Result to plain object          |
+| `Result.deserialize(value)`      | Rehydrate serialized Result             |
 
 ### Instance Methods
 
@@ -363,10 +368,13 @@ const rehydrated = Result.hydrate(JSON.parse(JSON.stringify(errResult)));
 
 ### Type Helpers
 
-| Type           | Description                   |
-| -------------- | ----------------------------- |
-| `InferOk<R>`   | Extract Ok type from Result   |
-| `InferErr<R>`  | Extract Err type from Result  |
+| Type                      | Description                       |
+| ------------------------- | --------------------------------- |
+| `InferOk<R>`              | Extract Ok type from Result       |
+| `InferErr<R>`             | Extract Err type from Result      |
+| `SerializedResult<T, E>`  | Plain object form of Result       |
+| `SerializedOk<T>`         | Plain object form of Ok           |
+| `SerializedErr<E>`        | Plain object form of Err          |
 
 ## Agents & AI
 
