@@ -1,15 +1,22 @@
 # better-result
-
-> **New to better-result?** Run `npx better-result init` for interactive setup.
-> **Upgrading from v1?** Run `npx better-result migrate` for guided migration.
-
 Lightweight Result type for TypeScript with generator-based composition.
 
-## Install
 
+
+
+## Install
+**New to better-result?** 
 ```sh
-npm install better-result
+npx better-result init
 ```
+
+
+**Upgrading from v1?** 
+```sh
+npx better-result migrate
+```
+
+
 
 ## Quick Start
 
