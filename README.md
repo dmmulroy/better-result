@@ -45,6 +45,7 @@ const message = parsed.match({
 - [Creating Results](#creating-results)
 - [Transforming Results](#transforming-results)
 - [Handling Errors](#handling-errors)
+- [Error Recovery](#error-recovery)
 - [Extracting Values](#extracting-values)
 - [Generator Composition](#generator-composition)
 - [Retry Support](#retry-support)
@@ -101,12 +102,38 @@ const result = fetchUser(id).mapError(
   (e) => new AppError(`Failed to fetch user: ${e.message}`),
 );
 
-// Recover from specific errors
+// Recover from specific errors using orElse
+const result = fetchUser(id).orElse((e) =>
+  e._tag === "NotFoundError" ? Result.ok(defaultUser) : Result.err(e),
+);
+
+// Or use pattern matching for complex logic
 const result = fetchUser(id).match({
-  ok: (user) => Result.ok(user),
+  ok: (user) => Result.ok(user.id),
   err: (e) =>
     e._tag === "NotFoundError" ? Result.ok(defaultUser) : Result.err(e),
 });
+```
+
+## Error Recovery
+
+```ts
+// Provide a fallback Result
+const result = fetchUser(id).orElse((e) =>
+  e._tag === "NotFoundError" ? Result.ok(defaultUser) : Result.err(e),
+);
+
+// Recover with a throwing function (sync)
+const parsed = Result.try(() => JSON.parse(input))
+  .orElseTry(() => JSON.parse(repaired));
+
+// Async recovery
+const result = await fetchPrimary(id)
+  .orElseAsync(async (e) => fetchBackup(id));
+
+// Async recovery wrapping a throwing promise
+const result = await fetchPrimary(id)
+  .orElseTryPromise(async () => fetchBackup(id));
 ```
 
 ## Extracting Values
@@ -342,17 +369,21 @@ const result = Result.deserialize<User, ValidationError>(serialized);
 
 ### Instance Methods
 
-| Method                | Description                           |
-| --------------------- | ------------------------------------- |
-| `.map(fn)`            | Transform success value               |
-| `.mapError(fn)`       | Transform error value                 |
-| `.andThen(fn)`        | Chain Result-returning function       |
-| `.andThenAsync(fn)`   | Chain async Result-returning function |
-| `.match({ ok, err })` | Pattern match                         |
-| `.unwrap(message?)`   | Extract value or throw                |
-| `.unwrapOr(fallback)` | Extract value or return fallback      |
-| `.tap(fn)`            | Side effect on success                |
-| `.tapAsync(fn)`       | Async side effect on success          |
+| Method                  | Description                           |
+| ----------------------- | ------------------------------------- |
+| `.map(fn)`              | Transform success value               |
+| `.mapError(fn)`         | Transform error value                 |
+| `.andThen(fn)`          | Chain Result-returning function       |
+| `.andThenAsync(fn)`     | Chain async Result-returning function |
+| `.orElse(fn)`           | Recover from error with Result        |
+| `.orElseTry(fn)`        | Recover with throwing function        |
+| `.orElseAsync(fn)`      | Async recovery with Result            |
+| `.orElseTryPromise(fn)` | Async recovery with throwing promise  |
+| `.match({ ok, err })`   | Pattern match                         |
+| `.unwrap(message?)`     | Extract value or throw                |
+| `.unwrapOr(fallback)`   | Extract value or return fallback      |
+| `.tap(fn)`              | Side effect on success                |
+| `.tapAsync(fn)`         | Async side effect on success          |
 
 ### TaggedError
 

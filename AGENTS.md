@@ -24,22 +24,22 @@ better-result/
 | Task                  | Location            | Notes                              |
 | --------------------- | ------------------- | ---------------------------------- |
 | Add Result method     | `src/result.ts`     | Add to both `Ok` and `Err` classes |
-| Add static combinator | `src/result.ts:623` | `Result` namespace object          |
+| Add static combinator | `src/result.ts:966` | `Result` namespace object          |
 | New error type        | `src/error.ts`      | Extend `TaggedError`, add `_tag`   |
 | Change exports        | `src/index.ts`      | Barrel file                        |
 
 ## CODE MAP
 
-| Symbol              | Type  | Location      | Role                           |
-| ------------------- | ----- | ------------- | ------------------------------ |
-| `Ok<A, E>`          | class | result.ts:15  | Success variant, E is phantom  |
-| `Err<T, E>`         | class | result.ts:165 | Error variant, T is phantom    |
-| `Result<T, E>`      | type  | result.ts:311 | Union: `Ok<T,E> \| Err<T,E>`   |
-| `Result.gen`        | fn    | result.ts:516 | Generator-based composition    |
-| `Result.try`        | fn    | result.ts:332 | Wrap sync throwing fn          |
-| `Result.tryPromise` | fn    | result.ts:375 | Wrap async throwing fn + retry |
-| `TaggedError`       | class | error.ts:13   | Base for discriminated errors  |
-| `dual`              | fn    | dual.ts:21    | Creates pipeable functions     |
+| Symbol              | Type  | Location       | Role                           |
+| ------------------- | ----- | -------------- | ------------------------------ |
+| `Ok<A, E>`          | class | result.ts:33   | Success variant, E is phantom  |
+| `Err<T, E>`         | class | result.ts:264  | Error variant, T is phantom    |
+| `Result<T, E>`      | type  | result.ts:503  | Union: `Ok<T,E> \| Err<T,E>`   |
+| `Result.gen`        | fn    | result.ts:806  | Generator-based composition    |
+| `Result.try`        | fn    | result.ts:542  | Wrap sync throwing fn          |
+| `Result.tryPromise` | fn    | result.ts:590  | Wrap async throwing fn + retry |
+| `TaggedError`       | class | error.ts:13    | Base for discriminated errors  |
+| `dual`              | fn    | dual.ts:21     | Creates pipeable functions     |
 
 ## CONVENTIONS
 
@@ -53,7 +53,7 @@ better-result/
 
 - **No `any` escape hatches** except `dual.ts` (unavoidable for arity dispatch)
 - **SAFETY comments**: Required when casting phantom types (`as unknown as`)
-- **No tests exist**: `bun test` configured but zero test files
+- **Tests exist**: `bun test` runs test suite in `src/result.test.ts`
 
 ## UNIQUE STYLES
 
@@ -94,7 +94,7 @@ const result = await Result.gen(async function* () {
 ```bash
 bun run build     # tsc compilation
 bun run check     # Type-check only (--noEmit)
-bun test          # Run tests (none exist yet)
+bun test          # Run tests
 ```
 
 ## NOTES
