@@ -170,6 +170,40 @@ export class Ok<A, E = never> {
   }
 
   /**
+   * No-op on Ok, returns self with new phantom error type.
+   *
+   * @template T2 New success type (unused).
+   * @template E2 New error type.
+   * @param _fn Ignored.
+   * @returns Self with updated phantom E type.
+   *
+   * @example
+   * ok(42).orElse(() => ok(0)) // Ok(42)
+   */
+  orElse<T2, E2>(_fn: (e: E) => Result<T2, E2>): Result<A | T2, E2> {
+    // SAFETY: E is phantom on Ok (not used at runtime).
+    return this as unknown as Ok<A, E2>;
+  }
+
+  /**
+   * No-op on Ok, returns self with new phantom error type.
+   *
+   * @template T2 New success type (unused).
+   * @template E2 New error type.
+   * @param _options Ignored.
+   * @returns Self with updated phantom E type.
+   *
+   * @example
+   * ok(42).orElseTry(() => fallback()) // Ok(42)
+   */
+  orElseTry<T2, E2 = UnhandledException>(
+    _options: ((e: E) => T2) | { try: (e: E) => T2; catch: (cause: unknown) => E2 },
+  ): Result<A | T2, E2> {
+    // SAFETY: E is phantom on Ok (not used at runtime).
+    return this as unknown as Ok<A, E2>;
+  }
+
+  /**
    * Makes Ok yieldable in Result.gen blocks.
    * Immediately returns the value without yielding.
    * Yield type Err<never, E> matches Err's for proper union inference.
@@ -309,6 +343,49 @@ export class Err<T, E> {
    */
   tapAsync(_fn: (a: T) => Promise<void>): Promise<Err<T, E>> {
     return Promise.resolve(this);
+  }
+
+  /**
+   * Calls fn with error to produce a fallback Result.
+   *
+   * @template T2 Fallback success type.
+   * @template E2 Fallback error type.
+   * @param fn Fallback function receiving the error.
+   * @returns Result from fn.
+   * @throws {Panic} If fn throws.
+   *
+   * @example
+   * err("fail").orElse(e => ok(0)) // Ok(0)
+   * err("fail").orElse(e => err("still failed")) // Err("still failed")
+   */
+  orElse<T2, E2>(fn: (e: E) => Result<T2, E2>): Result<T | T2, E2> {
+    return tryOrPanic(() => fn(this.error), "orElse callback threw");
+  }
+
+  /**
+   * Calls fallback function wrapped in try/catch to produce a fallback Result.
+   *
+   * @template T2 Fallback success type.
+   * @template E2 Fallback error type.
+   * @param options Fallback thunk or { try, catch } object.
+   * @returns Result from try/catch wrapped fallback.
+   *
+   * @example
+   * err("fail").orElseTry(() => JSON.parse(repaired))
+   * err("fail").orElseTry({
+   *   try: e => JSON.parse(repaired),
+   *   catch: () => new Error("Fallback failed")
+   * })
+   */
+  orElseTry<T2, E2 = UnhandledException>(
+    options: ((e: E) => T2) | { try: (e: E) => T2; catch: (cause: unknown) => E2 },
+  ): Result<T | T2, E2> {
+    return this.orElse(
+      (error): Result<T2, E2> =>
+        (typeof options === "function"
+          ? tryFn(() => options(error))
+          : tryFn({ try: () => options.try(error), catch: options.catch })) as Result<T2, E2>,
+    );
   }
 
   /**
@@ -571,6 +648,34 @@ const unwrapOr: {
 } = dual(2, <A, E, B>(result: Result<A, E>, fallback: B): A | B => {
   return result.unwrapOr(fallback);
 });
+
+const orElse: {
+  <A, E, T2, E2>(result: Result<A, E>, fn: (e: E) => Result<T2, E2>): Result<A | T2, E2>;
+  <E, T2, E2>(fn: (e: E) => Result<T2, E2>): <A>(result: Result<A, E>) => Result<A | T2, E2>;
+} = dual(
+  2,
+  <A, E, T2, E2>(result: Result<A, E>, fn: (e: E) => Result<T2, E2>): Result<A | T2, E2> => {
+    return result.orElse(fn);
+  },
+);
+
+const orElseTry: {
+  <A, E, T2, E2 = UnhandledException>(
+    result: Result<A, E>,
+    options: ((e: E) => T2) | { try: (e: E) => T2; catch: (cause: unknown) => E2 },
+  ): Result<A | T2, E2>;
+  <E, T2, E2 = UnhandledException>(
+    options: ((e: E) => T2) | { try: (e: E) => T2; catch: (cause: unknown) => E2 },
+  ): <A>(result: Result<A, E>) => Result<A | T2, E2>;
+} = dual(
+  2,
+  <A, E, T2, E2 = UnhandledException>(
+    result: Result<A, E>,
+    options: ((e: E) => T2) | { try: (e: E) => T2; catch: (cause: unknown) => E2 },
+  ): Result<A | T2, E2> => {
+    return result.orElseTry(options);
+  },
+);
 
 const gen: {
   <Yield extends Err<never, unknown>, R extends AnyResult>(
@@ -846,6 +951,25 @@ export const Result = {
    * Result.unwrapOr(err("fail"), 0) // 0
    */
   unwrapOr,
+  /**
+   * Provides a fallback Result on error.
+   *
+   * @example
+   * Result.orElse(err("fail"), e => ok(0)) // Ok(0)
+   * Result.orElse(e => ok(0))(err("fail")) // Ok(0)
+   */
+  orElse,
+  /**
+   * Provides a fallback by wrapping a throwing function in try/catch.
+   *
+   * @example
+   * Result.orElseTry(err("fail"), () => JSON.parse(repaired))
+   * Result.orElseTry({
+   *   try: e => JSON.parse(repaired),
+   *   catch: () => new Error("Fallback failed")
+   * })(err("fail"))
+   */
+  orElseTry,
   /**
    * Generator-based composition for Result types.
    *
