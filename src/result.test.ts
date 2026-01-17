@@ -1349,4 +1349,28 @@ describe("Type Inference", () => {
       expect(process("good").unwrap()).toBe("GOOD");
     });
   });
+
+  describe("partition", () => {
+    it("returns empty arrays for empty input", () => {
+      expect(Result.partition([])).toEqual([[], []]);
+    });
+
+    it("collects all Ok values when no errors", () => {
+      const results = [Result.ok(1), Result.ok(2), Result.ok(3)];
+      expect(Result.partition(results)).toEqual([[1, 2, 3], []]);
+    });
+
+    it("collects all Err values when no successes", () => {
+      const results = [Result.err("a"), Result.err("b")];
+      expect(Result.partition(results)).toEqual([[], ["a", "b"]]);
+    });
+
+    it("splits mixed results preserving order", () => {
+      const results = [Result.ok(1), Result.err("a"), Result.ok(2), Result.err("b")];
+      expect(Result.partition(results)).toEqual([
+        [1, 2],
+        ["a", "b"],
+      ]);
+    });
+  });
 });

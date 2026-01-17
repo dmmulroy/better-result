@@ -725,6 +725,19 @@ const hydrate = <T, E>(value: unknown): Result<T, E> | null => {
   return deserialize(value);
 };
 
+const partition = <T, E>(results: readonly Result<T, E>[]): [T[], E[]] => {
+  const oks: T[] = [];
+  const errs: E[] = [];
+  for (const r of results) {
+    if (r.status === "ok") {
+      oks.push(r.value);
+    } else {
+      errs.push(r.error);
+    }
+  }
+  return [oks, errs];
+};
+
 /**
  * Utilities for creating and handling Result types.
  *
@@ -890,4 +903,11 @@ export const Result = {
    * @deprecated Use `Result.deserialize` instead. Will be removed in 3.0.
    */
   hydrate,
+  /**
+   * Splits array of Results into tuple of [okValues, errorValues].
+   *
+   * @example
+   * partition([ok(1), err("a"), ok(2)]) // [[1, 2], ["a"]]
+   */
+  partition,
 } as const;

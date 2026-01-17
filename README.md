@@ -339,6 +339,7 @@ const result = Result.deserialize<User, ValidationError>(serialized);
 | `Result.await(promise)`          | Wrap Promise<Result> for generators     |
 | `Result.serialize(result)`       | Convert Result to plain object          |
 | `Result.deserialize(value)`      | Rehydrate serialized Result             |
+| `Result.partition(results)`      | Split array into [okValues, errValues]  |
 
 ### Instance Methods
 
