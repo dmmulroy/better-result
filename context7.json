@@ -1,5 +1,7 @@
 {
   "$schema": "https://context7.com/schema/context7.json",
+  "url": "https://context7.com/dmmulroy/better-result",
+  "public_key": "pk_eoke1PL003hY7cji9Cehq",
   "projectTitle": "better-result",
   "description": "Lightweight TypeScript Result type with generator-based composition for functional error handling via Ok/Err discriminated union",
   "folders": ["src"],
