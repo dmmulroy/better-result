@@ -1,6 +1,6 @@
 {
   "name": "better-result",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "Lightweight Result type with generator-based composition",
   "keywords": [
     "error-handling",
@@ -35,7 +35,8 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",
-      "import": "./dist/index.mjs"
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
     }
   },
   "scripts": {
