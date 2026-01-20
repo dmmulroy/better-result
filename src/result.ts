@@ -438,14 +438,17 @@ const tryFn: {
   return result;
 };
 
+type RetryOptions<E = unknown> = {
+  times: number;
+  delayMs: number;
+  backoff: "linear" | "constant" | "exponential";
+  /** Predicate to determine if an error should trigger a retry. Defaults to always retry. */
+  shouldRetry?: (error: E) => boolean;
+};
+
 type RetryConfig<E = unknown> = {
-  retry?: {
-    times: number;
-    delayMs: number;
-    backoff: "linear" | "constant" | "exponential";
-    /** Predicate to determine if an error should trigger a retry. Defaults to always retry. */
-    shouldRetry?: (error: E) => boolean;
-  };
+  /** Static retry options or a function that receives the error to determine retry behavior dynamically. */
+  retry?: RetryOptions<E> | ((error: E) => RetryOptions<E>);
 };
 
 const tryPromise: {
@@ -454,7 +457,10 @@ const tryPromise: {
     config?: RetryConfig<UnhandledException>,
   ): Promise<Result<A, UnhandledException>>;
   <A, E>(
-    options: { try: () => Promise<A>; catch: (cause: unknown) => E | Promise<E> },
+    options: {
+      try: () => Promise<A>;
+      catch: (cause: unknown) => E | Promise<E>;
+    },
     config?: RetryConfig<E>,
   ): Promise<Result<A, E>>;
 } = async <A, E>(
@@ -483,13 +489,23 @@ const tryPromise: {
     }
   };
 
-  const retry = config?.retry;
+  let result = await execute();
 
-  if (!retry) {
-    return execute();
+  if (!config?.retry || Result.isOk(result)) {
+    return result;
   }
 
-  const getDelay = (retryAttempt: number): number => {
+  const resolveRetry = (
+    error: E | UnhandledException,
+  ): RetryOptions<E | UnhandledException> | undefined => {
+    const retry = config.retry;
+    if (typeof retry === "function") {
+      return tryOrPanic(() => retry(error), "retry config function threw");
+    }
+    return retry;
+  };
+
+  const getDelay = (retry: RetryOptions<E | UnhandledException>, retryAttempt: number): number => {
     switch (retry.backoff) {
       case "constant":
         return retry.delayMs;
@@ -502,17 +518,20 @@ const tryPromise: {
 
   const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-  let result = await execute();
-
-  const shouldRetryFn = retry.shouldRetry ?? (() => true);
-
-  for (let attempt = 0; attempt < retry.times; attempt++) {
-    if (result.status !== "error") break;
+  let attempt = 0;
+  while (result.status === "error") {
     const error = result.error;
+    const retry = resolveRetry(error);
+
+    if (!retry || attempt >= retry.times) break;
+
+    const shouldRetryFn = retry.shouldRetry ?? (() => true);
     const shouldContinue = tryOrPanic(() => shouldRetryFn(error), "shouldRetry predicate threw");
     if (!shouldContinue) break;
-    await sleep(getDelay(attempt));
+
+    await sleep(getDelay(retry, attempt));
     result = await execute();
+    attempt++;
   }
 
   return result;
