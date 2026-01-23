@@ -386,7 +386,11 @@ export type InferErr<R> = R extends Err<unknown, infer E> ? E : never;
  */
 type AnyResult = Ok<unknown, unknown> | Err<unknown, unknown>;
 
-const ok = <A, E = never>(value: A): Ok<A, E> => new Ok<A, E>(value);
+function ok(): Ok<void, never>;
+function ok<A, E = never>(value: A): Ok<A, E>;
+function ok(value?: unknown) {
+  return new Ok(value);
+}
 
 const isOk = <A, E>(result: Result<A, E>): result is Ok<A, E> => {
   return result.status === "ok";

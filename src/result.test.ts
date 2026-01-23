@@ -20,6 +20,46 @@ describe("Result", () => {
       const result = Result.ok(undefined);
       expect(result.value).toBe(undefined);
     });
+
+    it("creates Ok<void> when called without arguments", () => {
+      const result = Result.ok();
+      expect(result).toBeInstanceOf(Ok);
+      expect(result.status).toBe("ok");
+      expect(result.value).toBe(undefined);
+    });
+
+    it("Ok<void> is assignable to Result<void, E>", () => {
+      const save = (): Result<void, Error> => {
+        return Result.ok();
+      };
+      const result = save();
+      expect(result.isOk()).toBe(true);
+      expect(result.unwrap()).toBe(undefined);
+    });
+
+    it("Ok<void> works with map", () => {
+      const result = Result.ok().map(() => 42);
+      expect(result.value).toBe(42);
+    });
+
+    it("Ok<void> works with andThen", () => {
+      const result = Result.ok().andThen(() => Result.ok("done"));
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value).toBe("done");
+      }
+    });
+
+    it("Ok<void> works in Result.gen", () => {
+      const result = Result.gen(function* () {
+        yield* Result.ok();
+        return Result.ok(42);
+      });
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value).toBe(42);
+      }
+    });
   });
 
   describe("err", () => {
