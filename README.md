@@ -16,6 +16,8 @@ npx better-result init
 npx better-result migrate
 ```
 
+Migrating from neverthrow? See [MIGRATION_NEVERTHROW.md](MIGRATION_NEVERTHROW.md).
+
 
 
 ## Quick Start
