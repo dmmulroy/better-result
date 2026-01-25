@@ -23,7 +23,7 @@ const isAnyTaggedError = (value: unknown): value is AnyTaggedError => {
  * class NotFoundError extends TaggedError("NotFoundError")<{
  *   id: string;
  *   message: string;
- * }> {}
+ * }>() {}
  *
  * const err = new NotFoundError({ id: "123", message: "Not found: 123" });
  * err._tag    // "NotFoundError"
