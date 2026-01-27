@@ -1731,4 +1731,17 @@ describe("Type Inference", () => {
       expect(mapped.unwrap()).toBe(42);
     });
   });
+
+  describe("Result.try async prevention", () => {
+    it("TypeScript error when passing a function that returns a promise", () => {
+      // @ts-expect-error - Type 'Promise<number>' is not assignable to type 'number'
+      Result.try(() => Promise.resolve(69));
+
+      // @ts-expect-error - Type 'Promise<string>' is not assignable to type 'string'
+      Result.try({ try: () => "ok", catch: () => Promise.resolve("err") });
+
+      // @ts-expect-error - Type 'Promise<boolean>' is not assignable to type 'boolean'
+      Result.try({ try: () => Promise.resolve(true), catch: () => false });
+    });
+  });
 });
