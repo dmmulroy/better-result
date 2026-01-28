@@ -403,13 +403,16 @@ const isError = <T, E>(result: Result<T, E>): result is Err<T, E> => {
 };
 
 const tryFn: {
-  <A>(thunk: () => A, config?: { retry?: { times: number } }): Result<A, UnhandledException>;
+  <A>(
+    thunk: () => Awaited<A>,
+    config?: { retry?: { times: number } },
+  ): Result<A, UnhandledException>;
   <A, E>(
-    options: { try: () => A; catch: (cause: unknown) => E },
+    options: { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E> },
     config?: { retry?: { times: number } },
   ): Result<A, E>;
 } = <A, E>(
-  options: (() => A) | { try: () => A; catch: (cause: unknown) => E },
+  options: (() => Awaited<A>) | { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E> },
   config?: { retry?: { times: number } },
 ): Result<A, E | UnhandledException> => {
   const execute = (): Result<A, E | UnhandledException> => {
