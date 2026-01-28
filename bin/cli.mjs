@@ -689,7 +689,7 @@ async function runInit() {
           }),
         opensrc: () =>
           p.confirm({
-            message: `Add source code for better AI context? ${color.dim(`(${link("opensrc", "https://github.com/anthropics/opensrc")})`)}`,
+            message: `Add source code for better AI context? ${color.dim(`(${link("opensrc", "https://github.com/vercel-labs/opensrc")})`)}`,
             initialValue: true,
           }),
         launch: () =>

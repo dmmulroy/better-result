@@ -465,7 +465,7 @@ npx better-result init
 Interactive setup that:
 
 1. Installs the better-result package
-2. Optionally fetches source code via [opensrc](https://github.com/anthropics/opensrc) for better AI context
+2. Optionally fetches source code via [opensrc](https://github.com/vercel-labs/opensrc) for better AI context
 3. Installs the adoption skill + `/adopt-better-result` command for your agent
 4. Optionally launches your agent
 
