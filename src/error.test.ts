@@ -234,6 +234,116 @@ describe("TaggedError", () => {
       });
       expect(matchPartialAppError(error)).toBe("fallback: NetworkError");
     });
+
+    it("narrows fallback type to exclude handled errors (data-first)", () => {
+      // Wrapper function ensures E is inferred as AppError from the parameter type
+      const matchTwoHandlers = (error: AppError) =>
+        matchErrorPartial(
+          error,
+          {
+            NotFoundError: (e) => `not found: ${e.id}`,
+            NetworkError: (e) => `network: ${e.url}`,
+          },
+          (e) => {
+            // Fallback only receives ValidationError since others are handled
+            const _check: ValidationError = e;
+            // @ts-expect-error - e should NOT have 'id' property (NotFoundError excluded)
+            void e.id;
+            // @ts-expect-error - e should NOT have 'url' property (NetworkError excluded)
+            void e.url;
+            return `validation: ${_check.field}`;
+          },
+        );
+
+      const error = new ValidationError({ field: "email", message: "invalid" });
+      expect(matchTwoHandlers(error)).toBe("validation: email");
+    });
+
+    it("fallback type excludes single handled error (data-first)", () => {
+      // Wrapper function ensures E is inferred as AppError from the parameter type
+      const matchOneHandler = (error: AppError) =>
+        matchErrorPartial(
+          error,
+          {
+            NotFoundError: (e) => `not found: ${e.id}`,
+          },
+          (e) => {
+            // Fallback receives ValidationError | NetworkError
+            type Expected = ValidationError | NetworkError;
+            const _check: Expected = e;
+            // @ts-expect-error - e should NOT have 'id' property (NotFoundError excluded)
+            void e.id;
+            return `other: ${_check._tag}`;
+          },
+        );
+
+      const error = new NetworkError({ url: "https://example.com", message: "timeout" });
+      expect(matchOneHandler(error)).toBe("other: NetworkError");
+    });
+
+    it("data-last form narrows fallback type", () => {
+      // Data-last: only need <E, R> - H is inferred from inline handlers object
+      const matcher = matchErrorPartial<AppError, string>(
+        {
+          NotFoundError: (e) => `not found: ${e.id}`,
+          ValidationError: (e) => `validation: ${e.field}`,
+        },
+        (e) => {
+          // Only NetworkError remains - type is properly narrowed
+          const _check: NetworkError = e;
+          return `network: ${_check.url}`;
+        },
+      );
+
+      const error: AppError = new NetworkError({ url: "https://api.test.com", message: "failed" });
+      expect(matcher(error)).toBe("network: https://api.test.com");
+    });
+
+    it("data-last form with explicit H for stored handlers", () => {
+      // When handlers are stored in a variable, use `as const` or explicit H
+      const handlers = {
+        NotFoundError: (e: NotFoundError) => `not found: ${e.id}`,
+      } as const;
+
+      const matcher = matchErrorPartial<AppError, string, typeof handlers>(
+        handlers,
+        (e) => {
+          // ValidationError | NetworkError remains
+          type Expected = ValidationError | NetworkError;
+          const _check: Expected = e;
+          // @ts-expect-error - e should NOT have 'id' property (NotFoundError excluded)
+          void e.id;
+          return `other: ${_check._tag}`;
+        },
+      );
+
+      const error: AppError = new ValidationError({ field: "email", message: "invalid" });
+      expect(matcher(error)).toBe("other: ValidationError");
+    });
+
+    it("handles all errors leaving never in fallback", () => {
+      // Wrapper function ensures E is inferred as AppError from the parameter type
+      const matchAllHandlers = (error: AppError) =>
+        matchErrorPartial(
+          error,
+          {
+            NotFoundError: (e) => `not found: ${e.id}`,
+            ValidationError: (e) => `validation: ${e.field}`,
+            NetworkError: (e) => `network: ${e.url}`,
+          },
+          (_e) => {
+            // When all errors are handled, fallback receives never
+            type FallbackType = typeof _e;
+            type IsNever = [FallbackType] extends [never] ? true : false;
+            const _proof: IsNever = true;
+            void _proof;
+            return "unreachable";
+          },
+        );
+
+      const error = new NotFoundError({ id: "123", message: "missing" });
+      expect(matchAllHandlers(error)).toBe("not found: 123");
+    });
   });
 });
 

@@ -110,6 +110,12 @@ type MatchHandlers<E extends AnyTaggedError, R> = {
   [K in E["_tag"]]: (err: Extract<E, { _tag: K }>) => R;
 };
 
+/** Partial handler map for non-exhaustive matching */
+type PartialMatchHandlers<E extends AnyTaggedError, R> = Partial<MatchHandlers<E, R>>;
+
+/** Extract handled tags from a handlers object */
+type HandledTags<E extends AnyTaggedError, H> = Extract<keyof H, E["_tag"]>;
+
 /**
  * Exhaustive pattern match on tagged error union.
  *
@@ -144,28 +150,34 @@ export const matchError: {
  * }, (e) => `Unknown: ${e.message}`);
  */
 export const matchErrorPartial: {
-  <E extends AnyTaggedError, R>(
+  <E extends AnyTaggedError, R, const H extends PartialMatchHandlers<E, R>>(
     err: E,
-    handlers: Partial<MatchHandlers<E, R>>,
-    fallback: (e: E) => R,
+    handlers: H,
+    fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>> }>) => R,
   ): R;
-  <E extends AnyTaggedError, R>(
-    handlers: Partial<MatchHandlers<E, R>>,
-    fallback: (e: E) => R,
+  <
+    E extends AnyTaggedError,
+    R,
+    const H extends PartialMatchHandlers<E, R> = PartialMatchHandlers<E, R>,
+  >(
+    handlers: H,
+    fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>> }>) => R,
   ): (err: E) => R;
 } = dual(
   3,
-  <E extends AnyTaggedError, R>(
+  <E extends AnyTaggedError, R, H extends PartialMatchHandlers<E, R>>(
     err: E,
-    handlers: Partial<MatchHandlers<E, R>>,
-    fallback: (e: E) => R,
+    handlers: H,
+    fallback: (e: Exclude<E, { _tag: HandledTags<E, H> }>) => R,
   ): R => {
-    const handler = handlers[err._tag as E["_tag"]];
-    if (handler) {
+    type K = HandledTags<E, H>;
+    const handler = handlers[err._tag as K];
+    if (typeof handler === "function") {
       // SAFETY: handler exists and matches the tag
-      return handler(err as Extract<E, { _tag: (typeof err)["_tag"] }>);
+      return handler(err as Parameters<NonNullable<typeof handler>>[0]);
     }
-    return fallback(err);
+    // SAFETY: If no handler matched, err is in the Exclude type
+    return fallback(err as Exclude<E, { _tag: K }>);
   },
 );
 
