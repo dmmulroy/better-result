@@ -275,7 +275,7 @@ if (Result.isError(result)) {
 Thrown (not returned) when user callbacks throw inside Result operations. Represents a defect in your code, not a domain error.
 
 ```ts
-import { Panic } from "better-result";
+import { Panic, isPanic } from "better-result";
 
 // Callback throws → Panic
 Result.ok(1).map(() => {
@@ -298,6 +298,24 @@ Result.try({
     throw new Error("bug in handler");
   },
 }); // throws Panic
+
+// Catching Panic (for error reporting)
+try {
+  result.map(() => { throw new Error("bug"); });
+} catch (error) {
+  if (isPanic(error)) {
+    // isPanic() is a type guard function
+    console.error("Defect:", error.message, error.cause);
+  }
+
+  if (Panic.is(error)) {
+    // Panic.is() is a static method (same behavior)
+  }
+
+  if (error instanceof Panic) {
+    // instanceof works too
+  }
+}
 ```
 
 **Why Panic?** `Err` is for recoverable domain errors. Panic is for bugs — like Rust's `panic!()`. If your `.map()` callback throws, that's not an error to handle, it's a defect to fix. Returning `Err` would collapse type safety (`Result<T, E>` becomes `Result<T, E | unknown>`).
