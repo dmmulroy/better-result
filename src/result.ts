@@ -384,7 +384,7 @@ export type InferErr<R> = R extends Err<unknown, infer E> ? E : never;
  * Constraint for any union of Ok/Err types.
  * Used in Result.gen to accept flexible return types from generators.
  */
-type AnyResult = Ok<unknown, unknown> | Err<unknown, unknown>;
+export type AnyResult = Ok<unknown, unknown> | Err<unknown, unknown>;
 
 function ok(): Ok<void, never>;
 function ok<A, E = never>(value: A): Ok<A, E>;
