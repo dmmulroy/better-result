@@ -1,7 +1,8 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, jest } from "bun:test";
 import { all } from "./all";
-import { Result } from "./result";
+import { AnyResult, Result } from "./result";
 
+// TODO: use fake timers, but Bun does not seem to have them yet
 describe("all", () => {
   describe("eager", () => {
     describe("default mode", () => {
@@ -12,8 +13,7 @@ describe("all", () => {
           Promise.resolve(Result.ok(3 as const)),
         ]);
 
-        expect(results.status).toBe("ok");
-        expect(results.unwrap()).toEqual([1, 2, 3]);
+        expect(results).toEqual(Result.ok([1, 2, 3]));
       });
 
       it("short circuits on first error", async () => {
@@ -23,16 +23,12 @@ describe("all", () => {
           Promise.resolve(Result.err(2 as const)),
         ]);
 
-        expect(results.status).toBe("error");
-        if (Result.isOk(results)) {
-          expect.unreachable("should be error");
-        }
-        expect(results.error).toBe(2);
+        expect(results).toEqual(Result.err(2));
       });
     });
     describe("settled mode", () => {
       it("returns all results in order", async () => {
-        const [one, two, three] = await all(
+        const results = await all(
           [
             Promise.resolve(Result.ok(1)),
             Promise.resolve(Result.err(2)),
@@ -42,13 +38,121 @@ describe("all", () => {
             mode: "settled",
           }
         );
+        expect(results).toEqual([Result.ok(1), Result.err(2), Result.ok(3)]);
+      });
+    });
+  });
 
-        expect(one.isOk()).toBe(true);
-        expect(one.unwrap()).toBe(1);
-        expect(two.isErr()).toBe(true);
-        expect(two.error).toBe(2);
-        expect(three.isOk()).toBe(true);
-        expect(three.unwrap()).toBe(3);
+  describe("lazy", () => {
+    describe("default mode", () => {
+      it("returns result in order and adheres to concurrency", async () => {
+        const mock = jest.fn();
+        const makeFn = (i: number) => {
+          const resolvers = Promise.withResolvers<void>();
+          const fn = async () => {
+            mock();
+            await resolvers.promise;
+            return Result.ok(i);
+          };
+          return { fn, resolve: resolvers.resolve };
+        };
+
+        const [one, two, three, four] = [
+          makeFn(1),
+          makeFn(2),
+          makeFn(3),
+          makeFn(4),
+        ];
+
+        const promise = all([one.fn, two.fn, three.fn, four.fn], {
+          concurrency: 2,
+        });
+
+        expect(mock).toHaveBeenCalledTimes(2);
+        one.resolve();
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(mock).toHaveBeenCalledTimes(3);
+        two.resolve();
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(mock).toHaveBeenCalledTimes(4);
+        three.resolve();
+        four.resolve();
+
+        const results = await promise;
+        expect(results).toEqual(Result.ok([1, 2, 3, 4]));
+      });
+      it("short circuits on first error", async () => {
+        const mock = jest.fn();
+        const makeFn = (i: number) => {
+          const resolvers = Promise.withResolvers<void>();
+          const fn = async () => {
+            mock();
+            await resolvers.promise;
+            return Result.ok(i);
+          };
+          return { fn, resolve: resolvers.resolve };
+        };
+
+        const [one, two] = [makeFn(1), makeFn(2)];
+
+        const promise = all(
+          [one.fn, two.fn, () => Promise.resolve(Result.err(3 as const))],
+          {
+            concurrency: 2,
+          }
+        );
+
+        expect(mock).toHaveBeenCalledTimes(2);
+        one.resolve();
+        await new Promise((resolve) => setImmediate(resolve));
+        // We never resolve second promise, if we don't short circuit on third (error case) this would hang forever
+        const res = await promise;
+        expect(res).toEqual(Result.err(3));
+      });
+    });
+    describe("settled mode", () => {
+      it("returns results in order and adheres to concurrency", async () => {
+        const mock = jest.fn();
+        const makeFn = (result: AnyResult) => {
+          const resolvers = Promise.withResolvers<void>();
+          const fn = async () => {
+            mock();
+            await resolvers.promise;
+            return result;
+          };
+          return { fn, resolve: resolvers.resolve };
+        };
+
+        const [one, two, three, four] = [
+          makeFn(Result.ok(1)),
+          makeFn(Result.err(2)),
+          makeFn(Result.ok(3)),
+          makeFn(Result.ok(4)),
+        ];
+
+        const promise = all([one.fn, two.fn, three.fn, four.fn], {
+          concurrency: 2,
+          mode: "settled",
+        });
+
+        expect(mock).toHaveBeenCalledTimes(2);
+        one.resolve();
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(mock).toHaveBeenCalledTimes(3);
+        two.resolve();
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(mock).toHaveBeenCalledTimes(4);
+        three.resolve();
+        four.resolve();
+
+        const results = await promise;
+
+        expect(results).toEqual([
+          Result.ok(1),
+          Result.err(2),
+          Result.ok(3),
+          Result.ok(4),
+        ]);
       });
     });
   });
