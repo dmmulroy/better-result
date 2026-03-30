@@ -406,18 +406,19 @@ async function runMigrate() {
 
   const selectedPM = /** @type {PackageManager} */ (responses.pm);
 
-  /** @type {Agent | null} */
-  let selectedAgent = null;
+  /** @type {Agent[]} */
+  let selectedAgents = [];
   let shouldLaunch = false;
 
   if (responses.installSkill) {
     const toolResponses = await p.group(
       {
         agent: () =>
-          p.select({
-            message: "AI coding agent",
+          p.multiselect({
+            message: "AI coding agents",
             options: agentOptions,
-            initialValue: detectedAgent ?? "opencode",
+            initialValues: detectedAgent ? [detectedAgent] : [],
+            required: true,
           }),
         launch: () =>
           p.confirm({
@@ -428,7 +429,7 @@ async function runMigrate() {
       { onCancel },
     );
 
-    selectedAgent = /** @type {Agent} */ (toolResponses.agent);
+    selectedAgents = /** @type {Agent[]} */ (toolResponses.agent);
     shouldLaunch = Boolean(toolResponses.launch);
   }
 
@@ -450,20 +451,22 @@ async function runMigrate() {
   }
 
   // Install migration skill + command
-  if (selectedAgent) {
+  if (selectedAgents.length > 0) {
     const skills = discoverSkills();
     const migrateSkill = skills.find((s) => s.id === "migrations/v2");
 
     if (migrateSkill) {
       const meta = parseSkillMeta(migrateSkill.skillFile);
-      const s2 = p.spinner();
-      s2.start(`Installing migration skill for ${selectedAgent}`);
+      for (const agent of selectedAgents) {
+        const s2 = p.spinner();
+        s2.start(`Installing migration skill for ${agent}`);
 
-      const skillResult = installSkill(migrateSkill.path, meta.name, selectedAgent);
-      installMigrateCommand(meta.name, selectedAgent);
+        const skillResult = installSkill(migrateSkill.path, meta.name, agent);
+        installMigrateCommand(meta.name, agent);
 
-      s2.stop("Migration skill installed");
-      p.log.success(`Skill: ${color.dim(skillResult.message)}`);
+        s2.stop(`Migration skill installed for ${agent}`);
+        p.log.success(`${color.bold(agent)} skill: ${color.dim(skillResult.message)}`);
+      }
     }
   }
 
@@ -493,12 +496,33 @@ async function runMigrate() {
   ];
 
   // Launch or show next steps
-  if (selectedAgent && shouldLaunch) {
-    if (!hasBinary(AGENT_CONFIG[selectedAgent].cli)) {
-      p.log.warn(`${selectedAgent} binary not found`);
+  if (selectedAgents.length > 0 && shouldLaunch) {
+    const launchable = selectedAgents.filter((a) => hasBinary(AGENT_CONFIG[a].cli));
+    const unlaunchable = selectedAgents.filter((a) => !hasBinary(AGENT_CONFIG[a].cli));
+
+    if (launchable.length === 0) {
+      for (const agent of unlaunchable) {
+        p.log.warn(`${agent} binary not found`);
+      }
       box(color.bold("Next steps"), commandHintLines);
-      p.outro(`Install ${selectedAgent}, then run: ${color.cyan(AGENT_CONFIG[selectedAgent].cli)}`);
+      p.outro(`Install an agent, then run: ${color.cyan(AGENT_CONFIG[selectedAgents[0]].cli)}`);
       process.exit(0);
+    }
+
+    let launchTarget = launchable[0];
+    if (launchable.length > 1) {
+      const pick = await p.select({
+        message: "Which agent to launch?",
+        options: launchable.map((a) => ({ value: a, label: a })),
+        initialValue: launchable[0],
+      });
+
+      if (p.isCancel(pick)) {
+        p.cancel("Migration cancelled.");
+        process.exit(0);
+      }
+
+      launchTarget = /** @type {Agent} */ (pick);
     }
 
     console.log();
@@ -506,7 +530,7 @@ async function runMigrate() {
     console.log();
 
     const confirmLaunch = await p.text({
-      message: `Press ${color.bold(color.cyan("Enter"))} to launch ${color.bold(selectedAgent)}...`,
+      message: `Press ${color.bold(color.cyan("Enter"))} to launch ${color.bold(launchTarget)}...`,
       placeholder: "",
       defaultValue: "",
     });
@@ -516,10 +540,13 @@ async function runMigrate() {
       process.exit(0);
     }
 
-    launchAgent(selectedAgent);
-  } else if (selectedAgent) {
+    launchAgent(launchTarget);
+  } else if (selectedAgents.length > 0) {
     const manualLines = [
-      `${color.white("Run:")} ${color.bold(color.cyan(AGENT_CONFIG[selectedAgent].cli))}`,
+      ...selectedAgents.map(
+        (a) =>
+          `${color.white("Run:")} ${color.bold(color.cyan(AGENT_CONFIG[a].cli))} ${color.dim(`(${a})`)}`,
+      ),
       "",
       ...commandHintLines,
     ];
@@ -673,8 +700,8 @@ async function runInit() {
   const selectedPM = /** @type {PackageManager} */ (responses.pm);
 
   // Conditional: agent selection + opensrc + launch option
-  /** @type {Agent | null} */
-  let selectedAgent = null;
+  /** @type {Agent[]} */
+  let selectedAgents = [];
   let shouldLaunch = false;
   let installOpensrc = false;
 
@@ -682,10 +709,11 @@ async function runInit() {
     const toolResponses = await p.group(
       {
         agent: () =>
-          p.select({
-            message: "AI coding agent",
+          p.multiselect({
+            message: "AI coding agents",
             options: agentOptions,
-            initialValue: detectedAgent ?? "opencode",
+            initialValues: detectedAgent ? [detectedAgent] : [],
+            required: true,
           }),
         opensrc: () =>
           p.confirm({
@@ -701,7 +729,7 @@ async function runInit() {
       { onCancel },
     );
 
-    selectedAgent = /** @type {Agent} */ (toolResponses.agent);
+    selectedAgents = /** @type {Agent[]} */ (toolResponses.agent);
     installOpensrc = Boolean(toolResponses.opensrc);
     shouldLaunch = Boolean(toolResponses.launch);
   }
@@ -737,22 +765,24 @@ async function runInit() {
     }
   }
 
-  // Install skill + command (if selected)
-  if (selectedAgent) {
-    const s2 = p.spinner();
-    s2.start(`Installing skill + command for ${selectedAgent}`);
+  // Install skill + command for each selected agent
+  if (selectedAgents.length > 0) {
+    for (const agent of selectedAgents) {
+      const s2 = p.spinner();
+      s2.start(`Installing skill + command for ${agent}`);
 
-    const skillResult = installSkill(adoptSkill.path, meta.name, selectedAgent);
-    const commandResult = installCommand(meta.name, selectedAgent);
+      const skillResult = installSkill(adoptSkill.path, meta.name, agent);
+      const commandResult = installCommand(meta.name, agent);
 
-    s2.stop("Skill + command installed");
+      s2.stop(`Skill + command installed for ${agent}`);
 
-    p.log.success(
-      `Skill: ${color.dim(skillResult.message)}${skillResult.existed ? color.dim(" (existed)") : ""}`,
-    );
-    p.log.success(
-      `Command: ${color.dim(commandResult.message)}${commandResult.existed ? color.dim(" (existed)") : ""}`,
-    );
+      p.log.success(
+        `${color.bold(agent)} skill: ${color.dim(skillResult.message)}${skillResult.existed ? color.dim(" (existed)") : ""}`,
+      );
+      p.log.success(
+        `${color.bold(agent)} command: ${color.dim(commandResult.message)}${commandResult.existed ? color.dim(" (existed)") : ""}`,
+      );
+    }
   }
 
   /** Strip ANSI codes for length calculation */
@@ -781,12 +811,33 @@ async function runInit() {
   ];
 
   // Launch or show next steps
-  if (selectedAgent && shouldLaunch) {
-    if (!hasBinary(AGENT_CONFIG[selectedAgent].cli)) {
-      p.log.warn(`${selectedAgent} binary not found`);
+  if (selectedAgents.length > 0 && shouldLaunch) {
+    const launchable = selectedAgents.filter((a) => hasBinary(AGENT_CONFIG[a].cli));
+    const unlaunchable = selectedAgents.filter((a) => !hasBinary(AGENT_CONFIG[a].cli));
+
+    if (launchable.length === 0) {
+      for (const agent of unlaunchable) {
+        p.log.warn(`${agent} binary not found`);
+      }
       box(color.bold("Next steps"), commandHintLines);
-      p.outro(`Install ${selectedAgent}, then run: ${color.cyan(AGENT_CONFIG[selectedAgent].cli)}`);
+      p.outro(`Install an agent, then run: ${color.cyan(AGENT_CONFIG[selectedAgents[0]].cli)}`);
       process.exit(0);
+    }
+
+    let launchTarget = launchable[0];
+    if (launchable.length > 1) {
+      const pick = await p.select({
+        message: "Which agent to launch?",
+        options: launchable.map((a) => ({ value: a, label: a })),
+        initialValue: launchable[0],
+      });
+
+      if (p.isCancel(pick)) {
+        p.cancel("Setup cancelled.");
+        process.exit(0);
+      }
+
+      launchTarget = /** @type {Agent} */ (pick);
     }
 
     console.log();
@@ -794,7 +845,7 @@ async function runInit() {
     console.log();
 
     const confirmLaunch = await p.text({
-      message: `Press ${color.bold(color.cyan("Enter"))} to launch ${color.bold(selectedAgent)}...`,
+      message: `Press ${color.bold(color.cyan("Enter"))} to launch ${color.bold(launchTarget)}...`,
       placeholder: "",
       defaultValue: "",
     });
@@ -804,10 +855,13 @@ async function runInit() {
       process.exit(0);
     }
 
-    launchAgent(selectedAgent);
-  } else if (selectedAgent) {
+    launchAgent(launchTarget);
+  } else if (selectedAgents.length > 0) {
     const manualLines = [
-      `${color.white("Run:")} ${color.bold(color.cyan(AGENT_CONFIG[selectedAgent].cli))}`,
+      ...selectedAgents.map(
+        (a) =>
+          `${color.white("Run:")} ${color.bold(color.cyan(AGENT_CONFIG[a].cli))} ${color.dim(`(${a})`)}`,
+      ),
       "",
       ...commandHintLines,
     ];
