@@ -440,6 +440,91 @@ describe("Result", () => {
     });
   });
 
+  describe("tryRecover", () => {
+    it("passes through Ok without calling callback", () => {
+      let called = false;
+      const result = Result.ok(42).tryRecover((e: string) => {
+        called = true;
+        return Result.ok(e.length);
+      });
+
+      expect(called).toBe(false);
+      expect(result.unwrap()).toBe(42);
+    });
+
+    it("recovers Err into Ok", () => {
+      const result = Result.err<number, string>("fail").tryRecover((e) => Result.ok(e.length));
+
+      expect(result.unwrap()).toBe(4);
+    });
+
+    it("recovers Err into Err", () => {
+      const result = Result.err<number, string>("fail").tryRecover((e) =>
+        Result.err<number, Error>(new Error(`wrapped: ${e}`)),
+      );
+
+      expect(Result.isError(result)).toBe(true);
+      if (Result.isError(result)) {
+        expect(result.error.message).toBe("wrapped: fail");
+      }
+    });
+
+    it("works as standalone function (data-first and data-last)", () => {
+      const dataFirst = Result.tryRecover(Result.err<number, string>("fail"), (e) =>
+        Result.ok(e.length),
+      );
+      const recover = Result.tryRecover((e: string) => Result.ok(e.length));
+      const dataLast = recover(Result.err<number, string>("fail"));
+
+      expect(dataFirst.unwrap()).toBe(4);
+      expect(dataLast.unwrap()).toBe(4);
+    });
+  });
+
+  describe("tryRecoverAsync", () => {
+    it("passes through Ok without calling callback", async () => {
+      let called = false;
+      const result = await Result.ok(42).tryRecoverAsync(async (e: string) => {
+        called = true;
+        return Result.ok(e.length);
+      });
+
+      expect(called).toBe(false);
+      expect(result.unwrap()).toBe(42);
+    });
+
+    it("recovers Err into Ok", async () => {
+      const result = await Result.err<number, string>("fail").tryRecoverAsync(async (e) =>
+        Result.ok(e.length),
+      );
+
+      expect(result.unwrap()).toBe(4);
+    });
+
+    it("recovers Err into Err", async () => {
+      const result = await Result.err<number, string>("fail").tryRecoverAsync(async (e) =>
+        Result.err<number, Error>(new Error(`wrapped: ${e}`)),
+      );
+
+      expect(Result.isError(result)).toBe(true);
+      if (Result.isError(result)) {
+        expect(result.error.message).toBe("wrapped: fail");
+      }
+    });
+
+    it("works as standalone function (data-first and data-last)", async () => {
+      const dataFirst = await Result.tryRecoverAsync(
+        Result.err<number, string>("fail"),
+        async (e) => Result.ok(e.length),
+      );
+      const recover = Result.tryRecoverAsync(async (e: string) => Result.ok(e.length));
+      const dataLast = await recover(Result.err<number, string>("fail"));
+
+      expect(dataFirst.unwrap()).toBe(4);
+      expect(dataLast.unwrap()).toBe(4);
+    });
+  });
+
   describe("andThen", () => {
     it("chains Ok to Ok", () => {
       const result = Result.ok(2).andThen((x) => Result.ok(x * 3));
@@ -1064,6 +1149,30 @@ describe("Result", () => {
       }
     });
 
+    it("Result.tryRecover throws Panic when callback throws", () => {
+      try {
+        Result.err("original").tryRecover(() => {
+          throw new Error("tryRecover callback failed");
+        });
+        expect.unreachable("should have thrown");
+      } catch (e) {
+        expect(e).toBeInstanceOf(Panic);
+        if (e instanceof Panic) {
+          expect(e.message).toContain("tryRecover");
+          expect(e.cause).toBeInstanceOf(Error);
+          expect((e.cause as Error).message).toBe("tryRecover callback failed");
+        }
+      }
+    });
+
+    it("Result.tryRecoverAsync throws Panic when callback rejects", async () => {
+      await expect(
+        Result.err("original").tryRecoverAsync(async () => {
+          throw new Error("tryRecoverAsync callback failed");
+        }),
+      ).rejects.toBeInstanceOf(Panic);
+    });
+
     it("Result.tap throws Panic when callback throws", () => {
       expect(() =>
         Result.ok(1).tap(() => {
@@ -1549,6 +1658,38 @@ describe("Type Inference", () => {
       const chained: Result<string, never> = r.andThen((n) => Result.ok(n.toString()));
 
       expect(chained.unwrap()).toBe("42");
+    });
+  });
+
+  describe("tryRecover type preservation", () => {
+    it("preserves success type while allowing error type change", () => {
+      const r: Result<number, ErrorA> = Result.err(new ErrorA());
+
+      const recovered: Result<number, ErrorB> = r.tryRecover((error) => {
+        expect(error).toBeInstanceOf(ErrorA);
+        return Result.err(new ErrorB());
+      });
+
+      expect(Result.isError(recovered)).toBe(true);
+      if (Result.isError(recovered)) {
+        expect(recovered.error).toBeInstanceOf(ErrorB);
+      }
+    });
+  });
+
+  describe("tryRecoverAsync type preservation", () => {
+    it("preserves success type while allowing error type change", async () => {
+      const r: Result<number, ErrorA> = Result.err(new ErrorA());
+
+      const recovered: Result<number, ErrorB> = await r.tryRecoverAsync(async (error) => {
+        expect(error).toBeInstanceOf(ErrorA);
+        return Result.err(new ErrorB());
+      });
+
+      expect(Result.isError(recovered)).toBe(true);
+      if (Result.isError(recovered)) {
+        expect(recovered.error).toBeInstanceOf(ErrorB);
+      }
     });
   });
 

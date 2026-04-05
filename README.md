@@ -97,11 +97,15 @@ Result.map((x) => x + 1)(result); // Pipeable
 // Transform error type
 const result = fetchUser(id).mapError((e) => new AppError(`Failed to fetch user: ${e.message}`));
 
-// Recover from specific errors
-const result = fetchUser(id).match({
-  ok: (user) => Result.ok(user),
-  err: (e) => (e._tag === "NotFoundError" ? Result.ok(defaultUser) : Result.err(e)),
-});
+// Recover from specific errors while preserving the same success type
+const result = fetchUser(id).tryRecover((e) =>
+  e._tag === "NotFoundError" ? Result.ok(defaultUser) : Result.err(e),
+);
+
+// Async recovery follows the same pattern
+const result = await fetchUser(id).tryRecoverAsync(async (e) =>
+  e._tag === "NetworkError" ? Result.ok(await readUserFromCache(id)) : Result.err(e),
+);
 ```
 
 ## Extracting Values
@@ -301,7 +305,9 @@ Result.try({
 
 // Catching Panic (for error reporting)
 try {
-  result.map(() => { throw new Error("bug"); });
+  result.map(() => {
+    throw new Error("bug");
+  });
 } catch (error) {
   if (isPanic(error)) {
     // isPanic() is a type guard function
@@ -423,36 +429,40 @@ const result = Result.deserialize<User, ValidationError>(serialized);
 
 ### Result
 
-| Method                           | Description                             |
-| -------------------------------- | --------------------------------------- |
-| `Result.ok(value)`               | Create success                          |
-| `Result.err(error)`              | Create error                            |
-| `Result.try(fn)`                 | Wrap throwing function                  |
-| `Result.tryPromise(fn, config?)` | Wrap async function with optional retry |
-| `Result.isOk(result)`            | Type guard for Ok                       |
-| `Result.isError(result)`         | Type guard for Err                      |
-| `Result.gen(fn)`                 | Generator composition                   |
-| `Result.await(promise)`          | Wrap Promise<Result> for generators     |
-| `Result.serialize(result)`       | Convert Result to plain object          |
-| `Result.deserialize(value)`      | Rehydrate serialized Result (returns `Err<ResultDeserializationError>` on invalid input) |
-| `Result.partition(results)`      | Split array into [okValues, errValues]  |
-| `Result.flatten(result)`         | Flatten nested Result                   |
+| Method                               | Description                                                                              |
+| ------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `Result.ok(value)`                   | Create success                                                                           |
+| `Result.err(error)`                  | Create error                                                                             |
+| `Result.try(fn)`                     | Wrap throwing function                                                                   |
+| `Result.tryPromise(fn, config?)`     | Wrap async function with optional retry                                                  |
+| `Result.isOk(result)`                | Type guard for Ok                                                                        |
+| `Result.isError(result)`             | Type guard for Err                                                                       |
+| `Result.gen(fn)`                     | Generator composition                                                                    |
+| `Result.tryRecover(result, fn)`      | Recover error into same success type                                                     |
+| `Result.tryRecoverAsync(result, fn)` | Async recover error into same success type                                               |
+| `Result.await(promise)`              | Wrap Promise<Result> for generators                                                      |
+| `Result.serialize(result)`           | Convert Result to plain object                                                           |
+| `Result.deserialize(value)`          | Rehydrate serialized Result (returns `Err<ResultDeserializationError>` on invalid input) |
+| `Result.partition(results)`          | Split array into [okValues, errValues]                                                   |
+| `Result.flatten(result)`             | Flatten nested Result                                                                    |
 
 ### Instance Methods
 
-| Method                | Description                           |
-| --------------------- | ------------------------------------- |
-| `.isOk()`             | Type guard, narrows to Ok             |
-| `.isErr()`            | Type guard, narrows to Err            |
-| `.map(fn)`            | Transform success value               |
-| `.mapError(fn)`       | Transform error value                 |
-| `.andThen(fn)`        | Chain Result-returning function       |
-| `.andThenAsync(fn)`   | Chain async Result-returning function |
-| `.match({ ok, err })` | Pattern match                         |
-| `.unwrap(message?)`   | Extract value or throw                |
-| `.unwrapOr(fallback)` | Extract value or return fallback      |
-| `.tap(fn)`            | Side effect on success                |
-| `.tapAsync(fn)`       | Async side effect on success          |
+| Method                 | Description                                |
+| ---------------------- | ------------------------------------------ |
+| `.isOk()`              | Type guard, narrows to Ok                  |
+| `.isErr()`             | Type guard, narrows to Err                 |
+| `.map(fn)`             | Transform success value                    |
+| `.mapError(fn)`        | Transform error value                      |
+| `.tryRecover(fn)`      | Recover error into same success type       |
+| `.tryRecoverAsync(fn)` | Async recover error into same success type |
+| `.andThen(fn)`         | Chain Result-returning function            |
+| `.andThenAsync(fn)`    | Chain async Result-returning function      |
+| `.match({ ok, err })`  | Pattern match                              |
+| `.unwrap(message?)`    | Extract value or throw                     |
+| `.unwrapOr(fallback)`  | Extract value or return fallback           |
+| `.tap(fn)`             | Side effect on success                     |
+| `.tapAsync(fn)`        | Async side effect on success               |
 
 ### TaggedError
 

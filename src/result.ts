@@ -72,6 +72,36 @@ export class Ok<A, E = never> {
   }
 
   /**
+   * No-op on Ok, returns self with new phantom error type.
+   *
+   * @template E2 New error type.
+   * @param _fn Ignored.
+   * @returns Self with updated phantom E type.
+   *
+   * @example
+   * ok(42).tryRecover(e => ok(e.length)) // Ok(42)
+   */
+  tryRecover<E2>(_fn: (e: never) => Result<A, E2>): Ok<A, E2> {
+    // SAFETY: E is phantom on Ok (not used at runtime).
+    return this as unknown as Ok<A, E2>;
+  }
+
+  /**
+   * No-op on Ok, returns Promise of self with new phantom error type.
+   *
+   * @template E2 New error type.
+   * @param _fn Ignored.
+   * @returns Promise of self with updated phantom E type.
+   *
+   * @example
+   * await ok(42).tryRecoverAsync(async e => ok(e.length)) // Ok(42)
+   */
+  tryRecoverAsync<E2>(_fn: (e: never) => Promise<Result<A, E2>>): Promise<Ok<A, E2>> {
+    // SAFETY: E is phantom on Ok (not used at runtime).
+    return Promise.resolve(this as unknown as Ok<A, E2>);
+  }
+
+  /**
    * Chains Result-returning function.
    *
    * @template B New success type.
@@ -240,6 +270,36 @@ export class Err<T, E> {
    */
   mapError<E2>(fn: (e: E) => E2): Err<T, E2> {
     return tryOrPanic(() => new Err<T, E2>(fn(this.error)), "mapError callback threw");
+  }
+
+  /**
+   * Attempts to recover from Err into the same success type.
+   *
+   * @template E2 New error type.
+   * @param fn Recovery function returning Result with the same success type.
+   * @returns Result from fn.
+   * @throws {Panic} If fn throws.
+   *
+   * @example
+   * err("missing").tryRecover(e => e === "missing" ? ok(0) : err(new Error(e))) // Ok(0)
+   */
+  tryRecover<E2>(fn: (e: E) => Result<T, E2>): Result<T, E2> {
+    return tryOrPanic(() => fn(this.error), "tryRecover callback threw");
+  }
+
+  /**
+   * Attempts to recover from Err into the same success type asynchronously.
+   *
+   * @template E2 New error type.
+   * @param fn Async recovery function returning Result with the same success type.
+   * @returns Promise of Result from fn.
+   * @throws {Panic} If fn throws synchronously or rejects.
+   *
+   * @example
+   * await err("missing").tryRecoverAsync(async e => e === "missing" ? ok(0) : err(new Error(e))) // Ok(0)
+   */
+  tryRecoverAsync<E2>(fn: (e: E) => Promise<Result<T, E2>>): Promise<Result<T, E2>> {
+    return tryOrPanicAsync(() => fn(this.error), "tryRecoverAsync callback threw");
   }
 
   /**
@@ -539,12 +599,34 @@ const mapError: {
   return result.mapError(fn);
 });
 
+const tryRecover: {
+  <A, E, E2>(result: Result<A, E>, fn: (e: E) => Result<A, E2>): Result<A, E2>;
+  <E, A, E2>(fn: (e: E) => Result<A, E2>): (result: Result<A, E>) => Result<A, E2>;
+} = dual(2, <A, E, E2>(result: Result<A, E>, fn: (e: E) => Result<A, E2>): Result<A, E2> => {
+  return result.tryRecover(fn);
+});
+
 const andThen: {
   <A, B, E, E2>(result: Result<A, E>, fn: (a: A) => Result<B, E2>): Result<B, E | E2>;
   <A, B, E2>(fn: (a: A) => Result<B, E2>): <E>(result: Result<A, E>) => Result<B, E | E2>;
 } = dual(2, <A, B, E, E2>(result: Result<A, E>, fn: (a: A) => Result<B, E2>): Result<B, E | E2> => {
   return result.andThen(fn);
 });
+
+const tryRecoverAsync: {
+  <A, E, E2>(result: Result<A, E>, fn: (e: E) => Promise<Result<A, E2>>): Promise<Result<A, E2>>;
+  <E, A, E2>(
+    fn: (e: E) => Promise<Result<A, E2>>,
+  ): (result: Result<A, E>) => Promise<Result<A, E2>>;
+} = dual(
+  2,
+  <A, E, E2>(
+    result: Result<A, E>,
+    fn: (e: E) => Promise<Result<A, E2>>,
+  ): Promise<Result<A, E2>> => {
+    return result.tryRecoverAsync(fn);
+  },
+);
 
 const andThenAsync: {
   <A, B, E, E2>(
@@ -890,12 +972,28 @@ export const Result = {
    */
   mapError,
   /**
+   * Attempts to recover from an error into the same success type.
+   *
+   * @example
+   * Result.tryRecover(err("fail"), e => ok(e.length)) // Ok(4)
+   * Result.tryRecover(e => ok(e.length))(err("fail")) // Ok(4)
+   */
+  tryRecover,
+  /**
    * Chains Result-returning function on success.
    *
    * @example
    * Result.andThen(ok(2), x => x > 0 ? ok(x) : err("neg")) // Ok(2)
    */
   andThen,
+  /**
+   * Attempts to recover from an error into the same success type asynchronously.
+   *
+   * @example
+   * await Result.tryRecoverAsync(err("fail"), async e => ok(e.length)) // Ok(4)
+   * await Result.tryRecoverAsync(async e => ok(e.length))(err("fail")) // Ok(4)
+   */
+  tryRecoverAsync,
   /**
    * Chains async Result-returning function on success.
    *
