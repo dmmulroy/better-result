@@ -1,4 +1,10 @@
-import { panic, ResultDeserializationError, UnhandledException } from "./error";
+import {
+  matchError as matchTaggedError,
+  matchErrorPartial as matchTaggedErrorPartial,
+  panic,
+  ResultDeserializationError,
+  UnhandledException,
+} from "./error";
 import { dual } from "./dual";
 
 /** Executes fn, panics if it throws. */
@@ -18,6 +24,45 @@ const tryOrPanicAsync = async <T>(fn: () => Promise<T>, message: string): Promis
     throw panic(message, cause);
   }
 };
+
+type TaggedErrorBase = Error & { readonly _tag: string };
+type TaggedErrorFor<E> = Extract<E, TaggedErrorBase>;
+
+type ErrorMatchHandlers<E extends TaggedErrorBase, R> = {
+  [K in E["_tag"]]: (err: Extract<E, { _tag: K }>) => R;
+};
+
+type ErrorPartialMatchHandlers<E extends TaggedErrorBase, R> = Partial<ErrorMatchHandlers<E, R>>;
+
+type ErrorHandledTags<E extends TaggedErrorBase, H> = Extract<keyof H, E["_tag"]>;
+type UnhandledTaggedErrors<E, H> = Exclude<
+  TaggedErrorFor<E>,
+  { _tag: NoInfer<ErrorHandledTags<TaggedErrorFor<E>, H>> }
+>;
+
+type ErrorAsyncMatchHandlers<E extends TaggedErrorBase, R> = {
+  [K in E["_tag"]]: (err: Extract<E, { _tag: K }>) => Promise<R>;
+};
+
+type ErrorAsyncPartialMatchHandlers<E extends TaggedErrorBase, R> = Partial<
+  ErrorAsyncMatchHandlers<E, R>
+>;
+
+type ErrorHandlersFor<E, R> = [TaggedErrorFor<E>] extends [never]
+  ? never
+  : ErrorMatchHandlers<TaggedErrorFor<E>, R>;
+
+type ErrorAsyncHandlersFor<E, R> = [TaggedErrorFor<E>] extends [never]
+  ? never
+  : ErrorAsyncMatchHandlers<TaggedErrorFor<E>, R>;
+
+type ErrorPartialHandlersFor<E, R> = [TaggedErrorFor<E>] extends [never]
+  ? never
+  : ErrorPartialMatchHandlers<TaggedErrorFor<E>, R>;
+
+type ErrorAsyncPartialHandlersFor<E, R> = [TaggedErrorFor<E>] extends [never]
+  ? never
+  : ErrorAsyncPartialMatchHandlers<TaggedErrorFor<E>, R>;
 
 /**
  * Successful result variant.
@@ -180,6 +225,122 @@ export class Ok<A, E = never> {
   }
 
   /**
+   * No-op on Ok, returns self.
+   *
+   * @param _fn Ignored.
+   * @returns Self.
+   */
+  tapError(errorHandler: (e: never) => void): Ok<A, E> {
+    void errorHandler;
+    return this;
+  }
+
+  /**
+   * No-op on Ok, returns Promise of self.
+   *
+   * @param _fn Ignored.
+   * @returns Promise of self.
+   */
+  tapErrorAsync(errorHandler: (e: never) => Promise<void>): Promise<Ok<A, E>> {
+    void errorHandler;
+    return Promise.resolve(this);
+  }
+
+  /**
+   * No-op on Ok, returns self with new phantom error type.
+   *
+   * @template TErr Tagged error type.
+   * @template E2 New error type.
+   * @param _handlers Ignored.
+   * @returns Self with updated phantom error type.
+   */
+  matchError<E2>(handlers: ErrorHandlersFor<E, E2>): Ok<A, E2> {
+    void handlers;
+    // SAFETY: E is phantom on Ok (not used at runtime).
+    return this as unknown as Ok<A, E2>;
+  }
+
+  /**
+   * No-op on Ok, returns Promise of self with new phantom error type.
+   *
+   * @template TErr Tagged error type.
+   * @template E2 New error type.
+   * @param _handlers Ignored.
+   * @returns Promise of self with updated phantom error type.
+   */
+  matchErrorAsync<E2>(handlers: ErrorAsyncHandlersFor<E, E2>): Promise<Ok<A, E2>> {
+    void handlers;
+    // SAFETY: E is phantom on Ok (not used at runtime).
+    return Promise.resolve(this as unknown as Ok<A, E2>);
+  }
+
+  /**
+   * No-op on Ok, returns self with new phantom error type.
+   *
+   * @template TErr Tagged error type.
+   * @template E2 New error type.
+   * @template H Handler map type.
+   * @param _handlers Ignored.
+   * @param _fallback Ignored.
+   * @returns Self with updated phantom error type.
+   */
+  matchErrorPartial<E2, const H extends ErrorPartialHandlersFor<E, E2>>(
+    handlers: H,
+    fallback: (e: UnhandledTaggedErrors<E, H>) => E2,
+  ): Ok<A, E2> {
+    void handlers;
+    void fallback;
+    // SAFETY: E is phantom on Ok (not used at runtime).
+    return this as unknown as Ok<A, E2>;
+  }
+
+  /**
+   * No-op on Ok, returns Promise of self with new phantom error type.
+   *
+   * @template TErr Tagged error type.
+   * @template E2 New error type.
+   * @template H Handler map type.
+   * @param _handlers Ignored.
+   * @param _fallback Ignored.
+   * @returns Promise of self with updated phantom error type.
+   */
+  matchErrorPartialAsync<E2, const H extends ErrorAsyncPartialHandlersFor<E, E2>>(
+    handlers: H,
+    fallback: (e: UnhandledTaggedErrors<E, H>) => Promise<E2>,
+  ): Promise<Ok<A, E2>> {
+    void handlers;
+    void fallback;
+    // SAFETY: E is phantom on Ok (not used at runtime).
+    return Promise.resolve(this as unknown as Ok<A, E2>);
+  }
+
+  /**
+   * No-op on Ok, returns self with new phantom error type.
+   *
+   * @template E2 New error type.
+   * @param _fn Ignored.
+   * @returns Self with updated phantom error type.
+   */
+  orElse<E2>(recovery: (e: never) => Result<A, E2>): Ok<A, E2> {
+    void recovery;
+    // SAFETY: E is phantom on Ok (not used at runtime).
+    return this as unknown as Ok<A, E2>;
+  }
+
+  /**
+   * No-op on Ok, returns Promise of self with new phantom error type.
+   *
+   * @template E2 New error type.
+   * @param _fn Ignored.
+   * @returns Promise of self with updated phantom error type.
+   */
+  orElseAsync<E2>(recovery: (e: never) => Promise<Result<A, E2>>): Promise<Ok<A, E2>> {
+    void recovery;
+    // SAFETY: E is phantom on Ok (not used at runtime).
+    return Promise.resolve(this as unknown as Ok<A, E2>);
+  }
+
+  /**
    * Makes Ok yieldable in Result.gen blocks.
    * Immediately returns the value without yielding.
    * Yield type Err<never, E> matches Err's for proper union inference.
@@ -329,6 +490,166 @@ export class Err<T, E> {
    */
   tapAsync(_fn: (a: never) => Promise<void>): Promise<Err<T, E>> {
     return Promise.resolve(this);
+  }
+
+  /**
+   * Runs side effect on Err, returns self.
+   *
+   * @param fn Side effect function.
+   * @returns Self.
+   * @throws {Panic} If fn throws.
+   */
+  tapError(fn: (e: E) => void): Err<T, E> {
+    return tryOrPanic(() => {
+      fn(this.error);
+      return this;
+    }, "tapError callback threw");
+  }
+
+  /**
+   * Runs async side effect on Err, returns self.
+   *
+   * @param fn Async side effect function.
+   * @returns Promise of self.
+   * @throws {Panic} If fn throws synchronously or rejects.
+   */
+  tapErrorAsync(fn: (e: E) => Promise<void>): Promise<Err<T, E>> {
+    return tryOrPanicAsync(async () => {
+      await fn(this.error);
+      return this;
+    }, "tapErrorAsync callback threw");
+  }
+
+  /**
+   * Pattern matches tagged error and transforms it.
+   *
+   * @template E2 New error type.
+   * @param handlers Exhaustive handlers by `_tag`.
+   * @returns Err with transformed error.
+   * @throws {Panic} If handler throws.
+   */
+  matchError<E2>(handlers: ErrorHandlersFor<E, E2>): Err<T, E2> {
+    return tryOrPanic(
+      () =>
+        new Err<T, E2>(
+          matchTaggedError(
+            this.error as TaggedErrorFor<E>,
+            handlers as ErrorMatchHandlers<TaggedErrorFor<E>, E2>,
+          ),
+        ),
+      "matchError handler threw",
+    );
+  }
+
+  /**
+   * Pattern matches tagged error asynchronously and transforms it.
+   *
+   * @template E2 New error type.
+   * @param handlers Exhaustive async handlers by `_tag`.
+   * @returns Promise of Err with transformed error.
+   * @throws {Panic} If handler throws synchronously or rejects.
+   */
+  matchErrorAsync<E2>(handlers: ErrorAsyncHandlersFor<E, E2>): Promise<Err<T, E2>> {
+    return tryOrPanicAsync(
+      async () => {
+        const error = this.error as TaggedErrorFor<E>;
+        const asyncHandlers = handlers as ErrorAsyncMatchHandlers<TaggedErrorFor<E>, E2>;
+        const handler = asyncHandlers[error._tag as TaggedErrorFor<E>["_tag"]];
+        return new Err<T, E2>(
+          await handler(error as Extract<TaggedErrorFor<E>, { _tag: (typeof error)["_tag"] }>),
+        );
+      },
+      "matchErrorAsync handler threw",
+    );
+  }
+
+  /**
+   * Partially pattern matches tagged error and transforms it.
+   *
+   * @template E2 New error type.
+   * @template H Handler map type.
+   * @param handlers Partial handlers by `_tag`.
+   * @param fallback Fallback for unhandled tags.
+   * @returns Err with transformed error.
+   * @throws {Panic} If handler or fallback throws.
+   */
+  matchErrorPartial<E2, const H extends ErrorPartialHandlersFor<E, E2>>(
+    handlers: H,
+    fallback: (e: UnhandledTaggedErrors<E, H>) => E2,
+  ): Err<T, E2> {
+    return tryOrPanic(
+      () =>
+        new Err<T, E2>(
+          matchTaggedErrorPartial(
+            this.error as TaggedErrorFor<E>,
+            handlers as ErrorPartialMatchHandlers<TaggedErrorFor<E>, E2>,
+            fallback as (
+              e: Exclude<TaggedErrorFor<E>, { _tag: ErrorHandledTags<TaggedErrorFor<E>, H> }>,
+            ) => E2,
+          ),
+        ),
+      "matchErrorPartial handler threw",
+    );
+  }
+
+  /**
+   * Partially pattern matches tagged error asynchronously and transforms it.
+   *
+   * @template E2 New error type.
+   * @template H Handler map type.
+   * @param handlers Partial async handlers by `_tag`.
+   * @param fallback Async fallback for unhandled tags.
+   * @returns Promise of Err with transformed error.
+   * @throws {Panic} If handler or fallback throws synchronously or rejects.
+   */
+  matchErrorPartialAsync<E2, const H extends ErrorAsyncPartialHandlersFor<E, E2>>(
+    handlers: H,
+    fallback: (e: UnhandledTaggedErrors<E, H>) => Promise<E2>,
+  ): Promise<Err<T, E2>> {
+    return tryOrPanicAsync(
+      async () => {
+        const error = this.error as TaggedErrorFor<E>;
+        const asyncHandlers = handlers as ErrorAsyncPartialMatchHandlers<TaggedErrorFor<E>, E2>;
+        type K = ErrorHandledTags<TaggedErrorFor<E>, H>;
+        const handler = asyncHandlers[error._tag as K];
+
+        if (typeof handler === "function") {
+          type HandlerParameter = Parameters<NonNullable<typeof handler>>[0];
+          return new Err<T, E2>(await handler(error as HandlerParameter));
+        }
+
+        return new Err<T, E2>(
+          await (
+            fallback as (e: Exclude<TaggedErrorFor<E>, { _tag: K }>) => Promise<E2>
+          )(error as Exclude<TaggedErrorFor<E>, { _tag: K }>),
+        );
+      },
+      "matchErrorPartialAsync handler threw",
+    );
+  }
+
+  /**
+   * Recovers from Err with Result-returning function.
+   *
+   * @template E2 New error type.
+   * @param fn Recovery function.
+   * @returns Result from fn.
+   * @throws {Panic} If fn throws.
+   */
+  orElse<E2>(fn: (e: E) => Result<T, E2>): Result<T, E2> {
+    return tryOrPanic(() => fn(this.error), "orElse callback threw");
+  }
+
+  /**
+   * Recovers from Err with async Result-returning function.
+   *
+   * @template E2 New error type.
+   * @param fn Async recovery function.
+   * @returns Promise of Result from fn.
+   * @throws {Panic} If fn throws synchronously or rejects.
+   */
+  orElseAsync<E2>(fn: (e: E) => Promise<Result<T, E2>>): Promise<Result<T, E2>> {
+    return tryOrPanicAsync(() => fn(this.error), "orElseAsync callback threw");
   }
 
   /**

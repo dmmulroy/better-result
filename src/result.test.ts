@@ -1,6 +1,23 @@
 import { describe, expect, it } from "bun:test";
 import { Result, Ok, Err } from "./result";
-import { Panic, ResultDeserializationError, UnhandledException } from "./error";
+import { Panic, ResultDeserializationError, TaggedError, UnhandledException } from "./error";
+
+class NotFoundError extends TaggedError("NotFoundError")<{
+  id: string;
+  message: string;
+}>() {}
+
+class ValidationError extends TaggedError("ValidationError")<{
+  field: string;
+  message: string;
+}>() {}
+
+class NetworkError extends TaggedError("NetworkError")<{
+  url: string;
+  message: string;
+}>() {}
+
+type AppError = NotFoundError | ValidationError | NetworkError;
 
 describe("Result", () => {
   describe("ok", () => {
@@ -552,6 +569,162 @@ describe("Result", () => {
     });
   });
 
+  describe("tapError", () => {
+    it("runs side effect on Err", () => {
+      let captured = "";
+      const result = Result.err("fail").tapError((e) => {
+        captured = e;
+      });
+      expect(captured).toBe("fail");
+      expect(Result.isError(result)).toBe(true);
+    });
+
+    it("skips side effect on Ok", () => {
+      let called = false;
+      const result = Result.ok(42).tapError(() => {
+        called = true;
+      });
+      expect(called).toBe(false);
+      expect(result.unwrap()).toBe(42);
+    });
+  });
+
+  describe("tapErrorAsync", () => {
+    it("runs async side effect on Err", async () => {
+      let captured = "";
+      const result = await Result.err("fail").tapErrorAsync(async (e) => {
+        captured = e;
+      });
+      expect(captured).toBe("fail");
+      expect(Result.isError(result)).toBe(true);
+    });
+
+    it("skips async side effect on Ok", async () => {
+      let called = false;
+      const result = await Result.ok(42).tapErrorAsync(async () => {
+        called = true;
+      });
+      expect(called).toBe(false);
+      expect(result.unwrap()).toBe(42);
+    });
+  });
+
+  describe("matchError", () => {
+    it("transforms tagged Err by tag", () => {
+      const result = Result.err<number, AppError>(
+        new NotFoundError({ id: "123", message: "not found" }),
+      ).matchError({
+        NotFoundError: (e) => `missing:${e.id}`,
+        ValidationError: (e) => `invalid:${e.field}`,
+        NetworkError: (e) => `network:${e.url}`,
+      });
+
+      expect(Result.isError(result)).toBe(true);
+      if (Result.isError(result)) {
+        expect(result.error).toBe("missing:123");
+      }
+    });
+
+    it("passes through Ok", () => {
+      const result = Result.ok<number, AppError>(42).matchError({
+        NotFoundError: () => "missing",
+        ValidationError: () => "invalid",
+        NetworkError: () => "network",
+      });
+      expect(result.unwrap()).toBe(42);
+    });
+  });
+
+  describe("matchErrorAsync", () => {
+    it("transforms tagged Err asynchronously", async () => {
+      const result = await Result.err<number, AppError>(
+        new ValidationError({ field: "email", message: "invalid" }),
+      ).matchErrorAsync({
+        NotFoundError: async (e) => `missing:${e.id}`,
+        ValidationError: async (e) => `invalid:${e.field}`,
+        NetworkError: async (e) => `network:${e.url}`,
+      });
+
+      expect(Result.isError(result)).toBe(true);
+      if (Result.isError(result)) {
+        expect(result.error).toBe("invalid:email");
+      }
+    });
+  });
+
+  describe("matchErrorPartial", () => {
+    it("transforms handled tagged errors", () => {
+      const result = Result.err<number, AppError>(
+        new NotFoundError({ id: "456", message: "not found" }),
+      ).matchErrorPartial(
+        {
+          NotFoundError: (e) => `missing:${e.id}`,
+        },
+        (e) => e.message,
+      );
+
+      expect(Result.isError(result)).toBe(true);
+      if (Result.isError(result)) {
+        expect(result.error).toBe("missing:456");
+      }
+    });
+
+    it("uses fallback for unhandled tagged errors", () => {
+      const result = Result.err<number, AppError>(
+        new NetworkError({ url: "https://api.example.com", message: "offline" }),
+      ).matchErrorPartial(
+        {
+          NotFoundError: (e) => `missing:${e.id}`,
+        },
+        (e) => `fallback:${e.message}`,
+      );
+
+      expect(Result.isError(result)).toBe(true);
+      if (Result.isError(result)) {
+        expect(result.error).toBe("fallback:offline");
+      }
+    });
+  });
+
+  describe("matchErrorPartialAsync", () => {
+    it("supports async fallback", async () => {
+      const result = await Result.err<number, AppError>(
+        new NetworkError({ url: "https://api.example.com", message: "offline" }),
+      ).matchErrorPartialAsync(
+        {
+          NotFoundError: async (e) => `missing:${e.id}`,
+        },
+        async (e) => `fallback:${e.message}`,
+      );
+
+      expect(Result.isError(result)).toBe(true);
+      if (Result.isError(result)) {
+        expect(result.error).toBe("fallback:offline");
+      }
+    });
+  });
+
+  describe("orElse", () => {
+    it("recovers Err to Ok", () => {
+      const result = Result.err<number, string>("fail").orElse((e) => Result.ok(e.length));
+      expect(result.unwrap()).toBe(4);
+    });
+
+    it("passes through Ok", () => {
+      const result = Result.ok<number, string>(42).orElse(() => Result.err("unused"));
+      expect(result.unwrap()).toBe(42);
+    });
+  });
+
+  describe("orElseAsync", () => {
+    it("recovers Err asynchronously", async () => {
+      const result = await Result.err<number, string>("fail").orElseAsync(async (e) =>
+        Result.ok(e.length),
+      );
+      expect(result.unwrap()).toBe(4);
+    });
+  });
+
   describe("gen (sync)", () => {
     it("composes multiple Results", () => {
       const getA = () => Result.ok(1);
@@ -1079,6 +1252,96 @@ describe("Result", () => {
         }),
       ).rejects.toBeInstanceOf(Panic);
     });
+
+    it("Result.tapError throws Panic when callback throws", () => {
+      expect(() =>
+        Result.err("fail").tapError(() => {
+          throw new Error("tapError callback failed");
+        }),
+      ).toThrow(Panic);
+    });
+
+    it("Result.tapErrorAsync throws Panic when callback rejects", async () => {
+      await expect(
+        Result.err("fail").tapErrorAsync(async () => {
+          throw new Error("tapErrorAsync callback failed");
+        }),
+      ).rejects.toBeInstanceOf(Panic);
+    });
+
+    it("Result.matchError throws Panic when handler throws", () => {
+      expect(() =>
+        Result.err<number, AppError>(new NotFoundError({ id: "1", message: "missing" })).matchError(
+          {
+            NotFoundError: () => {
+              throw new Error("matchError handler failed");
+            },
+            ValidationError: () => "invalid",
+            NetworkError: () => "network",
+          },
+        ),
+      ).toThrow(Panic);
+    });
+
+    it("Result.matchErrorAsync throws Panic when handler rejects", async () => {
+      await expect(
+        Result.err<number, AppError>(
+          new NotFoundError({ id: "1", message: "missing" }),
+        ).matchErrorAsync({
+          NotFoundError: async () => {
+            throw new Error("matchErrorAsync handler failed");
+          },
+          ValidationError: async () => "invalid",
+          NetworkError: async () => "network",
+        }),
+      ).rejects.toBeInstanceOf(Panic);
+    });
+
+    it("Result.matchErrorPartial throws Panic when fallback throws", () => {
+      expect(() =>
+        Result.err<number, AppError>(
+          new NetworkError({ url: "https://api.example.com", message: "offline" }),
+        ).matchErrorPartial(
+          {
+            NotFoundError: (e) => e.message,
+          },
+          (): string => {
+            throw new Error("matchErrorPartial fallback failed");
+          },
+        ),
+      ).toThrow(Panic);
+    });
+
+    it("Result.matchErrorPartialAsync throws Panic when fallback rejects", async () => {
+      await expect(
+        Result.err<number, AppError>(
+          new NetworkError({ url: "https://api.example.com", message: "offline" }),
+        ).matchErrorPartialAsync(
+          {
+            NotFoundError: async (e) => e.message,
+          },
+          async (): Promise<string> => {
+            throw new Error("matchErrorPartialAsync fallback failed");
+          },
+        ),
+      ).rejects.toBeInstanceOf(Panic);
+    });
+
+    it("Result.orElse throws Panic when callback throws", () => {
+      expect(() =>
+        Result.err<number, string>("fail").orElse(() => {
+          throw new Error("orElse callback failed");
+        }),
+      ).toThrow(Panic);
+    });
+
+    it("Result.orElseAsync throws Panic when callback rejects", async () => {
+      await expect(
+        Result.err<number, string>("fail").orElseAsync(async () => {
+          throw new Error("orElseAsync callback failed");
+        }),
+      ).rejects.toBeInstanceOf(Panic);
+    });
   });
 
   describe("Panic formatting", () => {
@@ -1504,6 +1767,62 @@ describe("Type Inference", () => {
       expect(Result.isError(mapped)).toBe(true);
       if (Result.isError(mapped)) {
         expect(mapped.error).toBeInstanceOf(ErrorC);
+      }
+    });
+  });
+
+  describe("matchError on union", () => {
+    it("transforms tagged union error type to single type", () => {
+      class ErrorA extends TaggedError("ErrorA")<{ message: string }>() {}
+      class ErrorB extends TaggedError("ErrorB")<{ message: string }>() {}
+      class ErrorC extends TaggedError("ErrorC")<{ message: string }>() {}
+
+      const r: Result<number, ErrorA | ErrorB> = Result.err(new ErrorA({ message: "boom" }));
+      const mapped: Result<number, ErrorC> = r.matchError({
+        ErrorA: (e) => new ErrorC({ message: `was:${e._tag}` }),
+        ErrorB: (e) => new ErrorC({ message: `was:${e._tag}` }),
+      });
+
+      expect(Result.isError(mapped)).toBe(true);
+      if (Result.isError(mapped)) {
+        expect(mapped.error).toBeInstanceOf(ErrorC);
+        expect(mapped.error.message).toBe("was:ErrorA");
+      }
+    });
+
+    it("partially transforms tagged union (preserving some variants)", () => {
+      class ErrorA extends TaggedError("ErrorA")<{ message: string }>() {}
+      class ErrorB extends TaggedError("ErrorB")<{ message: string }>() {}
+      class ErrorC extends TaggedError("ErrorC")<{ message: string }>() {}
+
+      const r: Result<number, ErrorA | ErrorB> = Result.err(new ErrorA({ message: "boom" }));
+      const mapped: Result<number, ErrorB | ErrorC> = r.matchErrorPartial(
+        {
+          ErrorA: (e) => new ErrorC({ message: e.message }),
+        },
+        (e) => e,
+      );
+
+      expect(Result.isError(mapped)).toBe(true);
+      if (Result.isError(mapped)) {
+        expect(mapped.error).toBeInstanceOf(ErrorC);
+      }
+    });
+  });
+
+  describe("orElse preserves value type", () => {
+    it("keeps Ok type while changing error type", () => {
+      class ErrorA extends TaggedError("ErrorA")<{ message: string }>() {}
+      class ErrorB extends TaggedError("ErrorB")<{ message: string }>() {}
+
+      const r: Result<number, ErrorA> = Result.err(new ErrorA({ message: "boom" }));
+      const recovered: Result<number, ErrorB> = r.orElse(() =>
+        Result.err(new ErrorB({ message: "next" })),
+      );
+
+      expect(Result.isError(recovered)).toBe(true);
+      if (Result.isError(recovered)) {
+        expect(recovered.error).toBeInstanceOf(ErrorB);
       }
     });
   });

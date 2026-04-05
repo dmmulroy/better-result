@@ -97,11 +97,16 @@ Result.map((x) => x + 1)(result); // Pipeable
 // Transform error type
 const result = fetchUser(id).mapError((e) => new AppError(`Failed to fetch user: ${e.message}`));
 
-// Recover from specific errors
-const result = fetchUser(id).match({
-  ok: (user) => Result.ok(user),
-  err: (e) => (e._tag === "NotFoundError" ? Result.ok(defaultUser) : Result.err(e)),
-});
+// Handle tagged errors fluently
+const result = fetchUser(id)
+  .tapError((e) => logger.warn(e))
+  .matchErrorPartial(
+    {
+      NotFoundError: () => new AppError("missing user"),
+    },
+    (e) => e,
+  )
+  .orElse((e) => (e._tag === "NotFoundError" ? Result.ok(defaultUser) : Result.err(e)));
 ```
 
 ## Extracting Values
@@ -301,7 +306,9 @@ Result.try({
 
 // Catching Panic (for error reporting)
 try {
-  result.map(() => { throw new Error("bug"); });
+  result.map(() => {
+    throw new Error("bug");
+  });
 } catch (error) {
   if (isPanic(error)) {
     // isPanic() is a type guard function
@@ -423,20 +430,20 @@ const result = Result.deserialize<User, ValidationError>(serialized);
 
 ### Result
 
-| Method                           | Description                             |
-| -------------------------------- | --------------------------------------- |
-| `Result.ok(value)`               | Create success                          |
-| `Result.err(error)`              | Create error                            |
-| `Result.try(fn)`                 | Wrap throwing function                  |
-| `Result.tryPromise(fn, config?)` | Wrap async function with optional retry |
-| `Result.isOk(result)`            | Type guard for Ok                       |
-| `Result.isError(result)`         | Type guard for Err                      |
-| `Result.gen(fn)`                 | Generator composition                   |
-| `Result.await(promise)`          | Wrap Promise<Result> for generators     |
-| `Result.serialize(result)`       | Convert Result to plain object          |
+| Method                           | Description                                                                              |
+| -------------------------------- | ---------------------------------------------------------------------------------------- |
+| `Result.ok(value)`               | Create success                                                                           |
+| `Result.err(error)`              | Create error                                                                             |
+| `Result.try(fn)`                 | Wrap throwing function                                                                   |
+| `Result.tryPromise(fn, config?)` | Wrap async function with optional retry                                                  |
+| `Result.isOk(result)`            | Type guard for Ok                                                                        |
+| `Result.isError(result)`         | Type guard for Err                                                                       |
+| `Result.gen(fn)`                 | Generator composition                                                                    |
+| `Result.await(promise)`          | Wrap Promise<Result> for generators                                                      |
+| `Result.serialize(result)`       | Convert Result to plain object                                                           |
 | `Result.deserialize(value)`      | Rehydrate serialized Result (returns `Err<ResultDeserializationError>` on invalid input) |
-| `Result.partition(results)`      | Split array into [okValues, errValues]  |
-| `Result.flatten(result)`         | Flatten nested Result                   |
+| `Result.partition(results)`      | Split array into [okValues, errValues]                                                   |
+| `Result.flatten(result)`         | Flatten nested Result                                                                    |
 
 ### Instance Methods
 
