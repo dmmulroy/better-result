@@ -637,6 +637,91 @@ describe("Result", () => {
     });
   });
 
+  describe("tapError", () => {
+    it("runs side effect on Err", () => {
+      let captured = "";
+      const result = Result.err<number, string>("fail").tapError((error) => {
+        captured = error;
+      });
+      expect(captured).toBe("fail");
+      expect(Result.isError(result)).toBe(true);
+      if (Result.isError(result)) {
+        expect(result.error).toBe("fail");
+      }
+    });
+
+    it("skips side effect on Ok", () => {
+      let called = false;
+      const result = Result.ok(42).tapError(() => {
+        called = true;
+      });
+      expect(called).toBe(false);
+      expect(result.unwrap()).toBe(42);
+    });
+
+    it("works as standalone function (data-first and data-last)", () => {
+      let dataFirstCaptured = "";
+      let dataLastCaptured = "";
+
+      const dataFirst = Result.tapError(Result.err<number, string>("fail"), (error) => {
+        dataFirstCaptured = error;
+      });
+      const tapError = Result.tapError((error: string) => {
+        dataLastCaptured = error;
+      });
+      const dataLast = tapError(Result.err<number, string>("fail"));
+
+      expect(dataFirstCaptured).toBe("fail");
+      expect(dataLastCaptured).toBe("fail");
+      expect(Result.isError(dataFirst)).toBe(true);
+      expect(Result.isError(dataLast)).toBe(true);
+    });
+  });
+
+  describe("tapErrorAsync", () => {
+    it("runs async side effect on Err", async () => {
+      let captured = "";
+      const result = await Result.err<number, string>("fail").tapErrorAsync(async (error) => {
+        captured = error;
+      });
+      expect(captured).toBe("fail");
+      expect(Result.isError(result)).toBe(true);
+      if (Result.isError(result)) {
+        expect(result.error).toBe("fail");
+      }
+    });
+
+    it("skips async side effect on Ok", async () => {
+      let called = false;
+      const result = await Result.ok(42).tapErrorAsync(async () => {
+        called = true;
+      });
+      expect(called).toBe(false);
+      expect(result.unwrap()).toBe(42);
+    });
+
+    it("works as standalone function (data-first and data-last)", async () => {
+      let dataFirstCaptured = "";
+      let dataLastCaptured = "";
+
+      const dataFirst = await Result.tapErrorAsync(
+        Result.err<number, string>("fail"),
+        async (error) => {
+          dataFirstCaptured = error;
+        },
+      );
+      const tapErrorAsync = Result.tapErrorAsync(async (error: string) => {
+        dataLastCaptured = error;
+      });
+      const dataLast = await tapErrorAsync(Result.err<number, string>("fail"));
+
+      expect(dataFirstCaptured).toBe("fail");
+      expect(dataLastCaptured).toBe("fail");
+      expect(Result.isError(dataFirst)).toBe(true);
+      expect(Result.isError(dataLast)).toBe(true);
+    });
+  });
+
   describe("gen (sync)", () => {
     it("composes multiple Results", () => {
       const getA = () => Result.ok(1);
@@ -1185,6 +1270,34 @@ describe("Result", () => {
       await expect(
         Result.ok(1).tapAsync(async () => {
           throw new Error("tapAsync callback failed");
+        }),
+      ).rejects.toBeInstanceOf(Panic);
+    });
+
+    it("Result.tapError throws Panic when callback throws", () => {
+      expect(() =>
+        Result.err("original").tapError(() => {
+          throw new Error("tapError callback failed");
+        }),
+      ).toThrow(Panic);
+
+      expect(() =>
+        Result.tapError(Result.err("original"), () => {
+          throw new Error("tapError callback failed");
+        }),
+      ).toThrow(Panic);
+    });
+
+    it("Result.tapErrorAsync throws Panic when callback rejects", async () => {
+      await expect(
+        Result.err("original").tapErrorAsync(async () => {
+          throw new Error("tapErrorAsync callback failed");
+        }),
+      ).rejects.toBeInstanceOf(Panic);
+
+      await expect(
+        Result.tapErrorAsync(Result.err("original"), async () => {
+          throw new Error("tapErrorAsync callback failed");
         }),
       ).rejects.toBeInstanceOf(Panic);
     });

@@ -43,6 +43,7 @@ const message = parsed.match({
 - [Creating Results](#creating-results)
 - [Transforming Results](#transforming-results)
 - [Handling Errors](#handling-errors)
+- [Observing Results](#observing-results)
 - [Extracting Values](#extracting-values)
 - [Generator Composition](#generator-composition)
 - [Retry Support](#retry-support)
@@ -104,10 +105,62 @@ const result = fetchUser(id).tryRecover((e) =>
 
 // Async recovery follows the same pattern
 // If fetchUser is async and returns Promise<Result<User, E>>, await it first.
-const result = await (await fetchUser(id)).tryRecoverAsync(async (e) =>
+const result = await (
+  await fetchUser(id)
+).tryRecoverAsync(async (e) =>
   e._tag === "NetworkError" ? Result.ok(await readUserFromCache(id)) : Result.err(e),
 );
 ```
+
+## Observing Results
+
+Use `tap` / `tapAsync` for success-side logging or tracing, and `tapError` / `tapErrorAsync` for error-side logging or tracing. These methods do not transform the `Result` — they always return the original value unchanged.
+
+```ts
+const result = Result.try(() => JSON.parse(input))
+  .tap((value) => {
+    console.debug("parsed payload", value);
+  })
+  .tapError((error) => {
+    console.error("failed to parse payload", error);
+  });
+```
+
+Async side effects follow the same pattern:
+
+```ts
+const result = await Result.err("request failed").tapErrorAsync(async (error) => {
+  await trace("request.failed", { error });
+});
+```
+
+Static helpers support both data-first and data-last styles:
+
+```ts
+const traced = Result.tapError(Result.err("cache miss"), (error) => {
+  console.warn("cache lookup failed", error);
+});
+
+const traceError = Result.tapErrorAsync(async (error: string) => {
+  await trace("cache.lookup_failed", { error });
+});
+
+await traceError(Result.err("cache miss"));
+```
+
+You can also observe both branches symmetrically in a chain:
+
+```ts
+const result = Result.try(() => JSON.parse(input))
+  .tap((value) => {
+    console.info("decoded payload", value);
+  })
+  .tapError((error) => {
+    console.warn("decode failed", error);
+  });
+```
+
+Thrown or rejected side-effect callbacks become `Panic`, just like other Result callbacks.
 
 ## Extracting Values
 
@@ -441,6 +494,10 @@ const result = Result.deserialize<User, ValidationError>(serialized);
 | `Result.gen(fn)`                     | Generator composition                                                                    |
 | `Result.tryRecover(result, fn)`      | Recover error into same success type                                                     |
 | `Result.tryRecoverAsync(result, fn)` | Async recover error into same success type                                               |
+| `Result.tap(result, fn)`             | Run side effect on success and return original result                                    |
+| `Result.tapAsync(result, fn)`        | Run async side effect on success and return original result                              |
+| `Result.tapError(result, fn)`        | Run side effect on error and return original result                                      |
+| `Result.tapErrorAsync(result, fn)`   | Run async side effect on error and return original result                                |
 | `Result.await(promise)`              | Wrap Promise<Result> for generators                                                      |
 | `Result.serialize(result)`           | Convert Result to plain object                                                           |
 | `Result.deserialize(value)`          | Rehydrate serialized Result (returns `Err<ResultDeserializationError>` on invalid input) |
@@ -464,6 +521,8 @@ const result = Result.deserialize<User, ValidationError>(serialized);
 | `.unwrapOr(fallback)`  | Extract value or return fallback           |
 | `.tap(fn)`             | Side effect on success                     |
 | `.tapAsync(fn)`        | Async side effect on success               |
+| `.tapError(fn)`        | Side effect on error                       |
+| `.tapErrorAsync(fn)`   | Async side effect on error                 |
 
 ### TaggedError
 
