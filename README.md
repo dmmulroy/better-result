@@ -114,7 +114,7 @@ const result = await (
 
 ## Observing Results
 
-Use `tap` / `tapAsync` for success-side logging or tracing, and `tapError` / `tapErrorAsync` for error-side logging or tracing. These methods do not transform the `Result` — they always return the original value unchanged.
+Use `tap` / `tapAsync` for success-side logging or tracing, `tapError` / `tapErrorAsync` for error-side logging or tracing, and `tapBoth` / `tapBothAsync` when you want to observe either branch with one handler object. These methods do not transform the `Result` — they always return the original value unchanged.
 
 ```ts
 const result = Result.try(() => JSON.parse(input))
@@ -126,11 +126,37 @@ const result = Result.try(() => JSON.parse(input))
   });
 ```
 
+If you want to observe both branches symmetrically with one call, use `tapBoth`:
+
+```ts
+const result = Result.try(() => JSON.parse(input)).tapBoth({
+  ok: (value) => {
+    console.info("decoded payload", value);
+  },
+  err: (error) => {
+    console.warn("decode failed", error);
+  },
+});
+```
+
 Async side effects follow the same pattern:
 
 ```ts
 const result = await Result.err("request failed").tapErrorAsync(async (error) => {
   await trace("request.failed", { error });
+});
+```
+
+`tapBothAsync` works the same way for async observers on either branch:
+
+```ts
+const observed = await Result.tapBothAsync(Result.try(() => JSON.parse(input)), {
+  ok: async (value) => {
+    await trace("payload.decoded", { value });
+  },
+  err: async (error) => {
+    await trace("payload.decode_failed", { error });
+  },
 });
 ```
 
@@ -148,17 +174,7 @@ const traceError = Result.tapErrorAsync(async (error: string) => {
 await traceError(Result.err("cache miss"));
 ```
 
-You can also observe both branches symmetrically in a chain:
-
-```ts
-const result = Result.try(() => JSON.parse(input))
-  .tap((value) => {
-    console.info("decoded payload", value);
-  })
-  .tapError((error) => {
-    console.warn("decode failed", error);
-  });
-```
+If you prefer, you can still observe both branches by chaining `tap` and `tapError` separately.
 
 Thrown or rejected side-effect callbacks become `Panic`, just like other Result callbacks.
 
@@ -498,6 +514,8 @@ const result = Result.deserialize<User, ValidationError>(serialized);
 | `Result.tapAsync(result, fn)`        | Run async side effect on success and return original result                              |
 | `Result.tapError(result, fn)`        | Run side effect on error and return original result                                      |
 | `Result.tapErrorAsync(result, fn)`   | Run async side effect on error and return original result                                |
+| `Result.tapBoth(result, handlers)`   | Run side effect on either branch and return original result                              |
+| `Result.tapBothAsync(result, handlers)` | Run async side effect on either branch and return original result                     |
 | `Result.await(promise)`              | Wrap Promise<Result> for generators                                                      |
 | `Result.serialize(result)`           | Convert Result to plain object                                                           |
 | `Result.deserialize(value)`          | Rehydrate serialized Result (returns `Err<ResultDeserializationError>` on invalid input) |
@@ -523,6 +541,8 @@ const result = Result.deserialize<User, ValidationError>(serialized);
 | `.tapAsync(fn)`        | Async side effect on success               |
 | `.tapError(fn)`        | Side effect on error                       |
 | `.tapErrorAsync(fn)`   | Async side effect on error                 |
+| `.tapBoth(handlers)`   | Side effect on either branch               |
+| `.tapBothAsync(handlers)` | Async side effect on either branch      |
 
 ### TaggedError
 

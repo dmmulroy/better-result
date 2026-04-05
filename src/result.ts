@@ -19,6 +19,36 @@ const tryOrPanicAsync = async <T>(fn: () => Promise<T>, message: string): Promis
   }
 };
 
+type TapBothHandlers<A, E> = {
+  ok: (a: A) => void;
+  err: (e: E) => void;
+};
+
+type TapBothOkHandlers<A> = {
+  ok: (a: A) => void;
+  err: (e: never) => void;
+};
+
+type TapBothErrHandlers<E> = {
+  ok: (a: never) => void;
+  err: (e: E) => void;
+};
+
+type TapBothAsyncHandlers<A, E> = {
+  ok: (a: A) => Promise<void>;
+  err: (e: E) => Promise<void>;
+};
+
+type TapBothAsyncOkHandlers<A> = {
+  ok: (a: A) => Promise<void>;
+  err: (e: never) => Promise<void>;
+};
+
+type TapBothAsyncErrHandlers<E> = {
+  ok: (a: never) => Promise<void>;
+  err: (e: E) => Promise<void>;
+};
+
 /**
  * Successful result variant.
  *
@@ -227,6 +257,34 @@ export class Ok<A, E = never> {
    */
   tapErrorAsync(_fn: (e: never) => Promise<void>): Promise<Ok<A, E>> {
     return Promise.resolve(this);
+  }
+
+  /**
+   * Runs ok side effect, skips err side effect, returns self.
+   *
+   * @param handlers Ok and err side effect handlers.
+   * @returns Self.
+   * @throws {Panic} If ok handler throws.
+   */
+  tapBoth(handlers: TapBothOkHandlers<A>): Ok<A, E> {
+    return tryOrPanic(() => {
+      handlers.ok(this.value);
+      return this;
+    }, "tapBoth ok callback threw");
+  }
+
+  /**
+   * Runs async ok side effect, skips err side effect, returns self.
+   *
+   * @param handlers Ok and err async side effect handlers.
+   * @returns Promise of self.
+   * @throws {Panic} If ok handler throws synchronously or rejects.
+   */
+  tapBothAsync(handlers: TapBothAsyncOkHandlers<A>): Promise<Ok<A, E>> {
+    return tryOrPanicAsync(async () => {
+      await handlers.ok(this.value);
+      return this;
+    }, "tapBothAsync ok callback threw");
   }
 
   /**
@@ -443,6 +501,34 @@ export class Err<T, E> {
       await fn(this.error);
       return this;
     }, "tapErrorAsync callback threw");
+  }
+
+  /**
+   * Skips ok side effect, runs err side effect, returns self.
+   *
+   * @param handlers Ok and err side effect handlers.
+   * @returns Self.
+   * @throws {Panic} If err handler throws.
+   */
+  tapBoth(handlers: TapBothErrHandlers<E>): Err<T, E> {
+    return tryOrPanic(() => {
+      handlers.err(this.error);
+      return this;
+    }, "tapBoth err callback threw");
+  }
+
+  /**
+   * Skips async ok side effect, runs async err side effect, returns self.
+   *
+   * @param handlers Ok and err async side effect handlers.
+   * @returns Promise of self.
+   * @throws {Panic} If err handler throws synchronously or rejects.
+   */
+  tapBothAsync(handlers: TapBothAsyncErrHandlers<E>): Promise<Err<T, E>> {
+    return tryOrPanicAsync(async () => {
+      await handlers.err(this.error);
+      return this;
+    }, "tapBothAsync err callback threw");
   }
 
   /**
@@ -734,6 +820,23 @@ const tapErrorAsync: {
 } = dual(2, <A, E>(result: Result<A, E>, fn: (e: E) => Promise<void>): Promise<Result<A, E>> => {
   return result.tapErrorAsync(fn);
 });
+
+const tapBoth: {
+  <A, E>(result: Result<A, E>, handlers: TapBothHandlers<A, E>): Result<A, E>;
+  <A, E>(handlers: TapBothHandlers<A, E>): (result: Result<A, E>) => Result<A, E>;
+} = dual(2, <A, E>(result: Result<A, E>, handlers: TapBothHandlers<A, E>): Result<A, E> => {
+  return result.tapBoth(handlers);
+});
+
+const tapBothAsync: {
+  <A, E>(result: Result<A, E>, handlers: TapBothAsyncHandlers<A, E>): Promise<Result<A, E>>;
+  <A, E>(handlers: TapBothAsyncHandlers<A, E>): (result: Result<A, E>) => Promise<Result<A, E>>;
+} = dual(
+  2,
+  <A, E>(result: Result<A, E>, handlers: TapBothAsyncHandlers<A, E>): Promise<Result<A, E>> => {
+    return result.tapBothAsync(handlers);
+  },
+);
 
 const unwrap = <A, E>(result: Result<A, E>, message?: string): A => {
   return result.unwrap(message);
@@ -1106,6 +1209,22 @@ export const Result = {
    * await Result.tapErrorAsync(async e => await reportError(e))(err("fail"))
    */
   tapErrorAsync,
+  /**
+   * Runs side effect on either branch, returns original result.
+   *
+   * @example
+   * Result.tapBoth(ok(2), { ok: console.log, err: console.error })
+   * Result.tapBoth({ ok: console.log, err: console.error })(err("fail"))
+   */
+  tapBoth,
+  /**
+   * Runs async side effect on either branch, returns original result.
+   *
+   * @example
+   * await Result.tapBothAsync(ok(2), { ok: async x => await log(x), err: async e => await reportError(e) })
+   * await Result.tapBothAsync({ ok: async x => await log(x), err: async e => await reportError(e) })(err("fail"))
+   */
+  tapBothAsync,
   /**
    * Extracts value or throws.
    *

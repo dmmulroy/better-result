@@ -722,6 +722,136 @@ describe("Result", () => {
     });
   });
 
+  describe("tapBoth", () => {
+    it("runs ok side effect on Ok and skips err side effect", () => {
+      let okCaptured = 0;
+      let errCalled = false;
+
+      const result = Result.ok<number, string>(42).tapBoth({
+        ok: (value) => {
+          okCaptured = value;
+        },
+        err: () => {
+          errCalled = true;
+        },
+      });
+
+      expect(okCaptured).toBe(42);
+      expect(errCalled).toBe(false);
+      expect(result.unwrap()).toBe(42);
+    });
+
+    it("runs err side effect on Err and skips ok side effect", () => {
+      let okCalled = false;
+      let errCaptured = "";
+
+      const result = Result.err<number, string>("fail").tapBoth({
+        ok: () => {
+          okCalled = true;
+        },
+        err: (error) => {
+          errCaptured = error;
+        },
+      });
+
+      expect(okCalled).toBe(false);
+      expect(errCaptured).toBe("fail");
+      expect(Result.isError(result)).toBe(true);
+      if (Result.isError(result)) {
+        expect(result.error).toBe("fail");
+      }
+    });
+
+    it("works as standalone function (data-first and data-last)", () => {
+      let dataFirstOk = 0;
+      let dataLastErr = "";
+
+      const dataFirst = Result.tapBoth(Result.ok<number, string>(42), {
+        ok: (value) => {
+          dataFirstOk = value;
+        },
+        err: () => {},
+      });
+      const tapBoth = Result.tapBoth({
+        ok: (_value: number) => {},
+        err: (error: string) => {
+          dataLastErr = error;
+        },
+      });
+      const dataLast = tapBoth(Result.err<number, string>("fail"));
+
+      expect(dataFirstOk).toBe(42);
+      expect(dataLastErr).toBe("fail");
+      expect(dataFirst.unwrap()).toBe(42);
+      expect(Result.isError(dataLast)).toBe(true);
+    });
+  });
+
+  describe("tapBothAsync", () => {
+    it("runs async ok side effect on Ok and skips err side effect", async () => {
+      let okCaptured = 0;
+      let errCalled = false;
+
+      const result = await Result.ok<number, string>(42).tapBothAsync({
+        ok: async (value) => {
+          okCaptured = value;
+        },
+        err: async () => {
+          errCalled = true;
+        },
+      });
+
+      expect(okCaptured).toBe(42);
+      expect(errCalled).toBe(false);
+      expect(result.unwrap()).toBe(42);
+    });
+
+    it("runs async err side effect on Err and skips ok side effect", async () => {
+      let okCalled = false;
+      let errCaptured = "";
+
+      const result = await Result.err<number, string>("fail").tapBothAsync({
+        ok: async () => {
+          okCalled = true;
+        },
+        err: async (error) => {
+          errCaptured = error;
+        },
+      });
+
+      expect(okCalled).toBe(false);
+      expect(errCaptured).toBe("fail");
+      expect(Result.isError(result)).toBe(true);
+      if (Result.isError(result)) {
+        expect(result.error).toBe("fail");
+      }
+    });
+
+    it("works as standalone function (data-first and data-last)", async () => {
+      let dataFirstOk = 0;
+      let dataLastErr = "";
+
+      const dataFirst = await Result.tapBothAsync(Result.ok<number, string>(42), {
+        ok: async (value) => {
+          dataFirstOk = value;
+        },
+        err: async () => {},
+      });
+      const tapBothAsync = Result.tapBothAsync({
+        ok: async (_value: number) => {},
+        err: async (error: string) => {
+          dataLastErr = error;
+        },
+      });
+      const dataLast = await tapBothAsync(Result.err<number, string>("fail"));
+
+      expect(dataFirstOk).toBe(42);
+      expect(dataLastErr).toBe("fail");
+      expect(dataFirst.unwrap()).toBe(42);
+      expect(Result.isError(dataLast)).toBe(true);
+    });
+  });
+
   describe("gen (sync)", () => {
     it("composes multiple Results", () => {
       const getA = () => Result.ok(1);
@@ -1298,6 +1428,86 @@ describe("Result", () => {
       await expect(
         Result.tapErrorAsync(Result.err("original"), async () => {
           throw new Error("tapErrorAsync callback failed");
+        }),
+      ).rejects.toBeInstanceOf(Panic);
+    });
+
+    it("Result.tapBoth throws Panic when ok callback throws", () => {
+      expect(() =>
+        Result.ok<number, string>(1).tapBoth({
+          ok: () => {
+            throw new Error("tapBoth ok callback failed");
+          },
+          err: () => {},
+        }),
+      ).toThrow(Panic);
+
+      expect(() =>
+        Result.tapBoth(Result.ok<number, string>(1), {
+          ok: () => {
+            throw new Error("tapBoth ok callback failed");
+          },
+          err: () => {},
+        }),
+      ).toThrow(Panic);
+    });
+
+    it("Result.tapBoth throws Panic when err callback throws", () => {
+      expect(() =>
+        Result.err<number, string>("original").tapBoth({
+          ok: () => {},
+          err: () => {
+            throw new Error("tapBoth err callback failed");
+          },
+        }),
+      ).toThrow(Panic);
+
+      expect(() =>
+        Result.tapBoth(Result.err<number, string>("original"), {
+          ok: () => {},
+          err: () => {
+            throw new Error("tapBoth err callback failed");
+          },
+        }),
+      ).toThrow(Panic);
+    });
+
+    it("Result.tapBothAsync throws Panic when ok callback rejects", async () => {
+      await expect(
+        Result.ok<number, string>(1).tapBothAsync({
+          ok: async () => {
+            throw new Error("tapBothAsync ok callback failed");
+          },
+          err: async () => {},
+        }),
+      ).rejects.toBeInstanceOf(Panic);
+
+      await expect(
+        Result.tapBothAsync(Result.ok<number, string>(1), {
+          ok: async () => {
+            throw new Error("tapBothAsync ok callback failed");
+          },
+          err: async () => {},
+        }),
+      ).rejects.toBeInstanceOf(Panic);
+    });
+
+    it("Result.tapBothAsync throws Panic when err callback rejects", async () => {
+      await expect(
+        Result.err<number, string>("original").tapBothAsync({
+          ok: async () => {},
+          err: async () => {
+            throw new Error("tapBothAsync err callback failed");
+          },
+        }),
+      ).rejects.toBeInstanceOf(Panic);
+
+      await expect(
+        Result.tapBothAsync(Result.err<number, string>("original"), {
+          ok: async () => {},
+          err: async () => {
+            throw new Error("tapBothAsync err callback failed");
+          },
         }),
       ).rejects.toBeInstanceOf(Panic);
     });
