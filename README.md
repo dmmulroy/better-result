@@ -103,7 +103,8 @@ const result = fetchUser(id).tryRecover((e) =>
 );
 
 // Async recovery follows the same pattern
-const result = await fetchUser(id).tryRecoverAsync(async (e) =>
+// If fetchUser is async and returns Promise<Result<User, E>>, await it first.
+const result = await (await fetchUser(id)).tryRecoverAsync(async (e) =>
   e._tag === "NetworkError" ? Result.ok(await readUserFromCache(id)) : Result.err(e),
 );
 ```
