@@ -2,6 +2,8 @@
 
 Lightweight Result type for TypeScript with generator-based composition.
 
+📖 **[Documentation](https://better-result.dev/core/creating-results)**
+
 ## Install
 
 ```sh
