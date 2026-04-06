@@ -99,11 +99,11 @@ class TimestampedError extends TaggedError("TimestampedError")<{
 
 ## Static Helper Migration
 
-| v1 | v2 |
-| --- | --- |
-| `TaggedError.match(err, handlers)` | `matchError(err, handlers)` |
-| `TaggedError.matchPartial(err, handlers, fallback)` | `matchErrorPartial(err, handlers, fallback)` |
-| `TaggedError.isTaggedError(value)` | `isTaggedError(value)` or `TaggedError.is(value)` |
+| v1                                                  | v2                                                |
+| --------------------------------------------------- | ------------------------------------------------- |
+| `TaggedError.match(err, handlers)`                  | `matchError(err, handlers)`                       |
+| `TaggedError.matchPartial(err, handlers, fallback)` | `matchErrorPartial(err, handlers, fallback)`      |
+| `TaggedError.isTaggedError(value)`                  | `isTaggedError(value)` or `TaggedError.is(value)` |
 
 ## Import Migration
 

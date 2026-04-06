@@ -21,11 +21,11 @@ Use this skill when the user wants to:
 
 ## Reading Order
 
-| Task | Files to Read |
-| --- | --- |
-| Adopt better-result in a module | This file |
-| Define or review error types | `references/tagged-errors.md` |
-| Inspect library implementation details | `opensrc/` if present |
+| Task                                   | Files to Read                 |
+| -------------------------------------- | ----------------------------- |
+| Adopt better-result in a module        | This file                     |
+| Define or review error types           | `references/tagged-errors.md` |
+| Inspect library implementation details | `opensrc/` if present         |
 
 ## Prerequisites
 
@@ -51,11 +51,11 @@ Do not convert the whole codebase at once.
 
 ### 2. Classify existing failures
 
-| Category | Examples | Target shape |
-| --- | --- | --- |
-| Domain errors | not found, validation, auth | `TaggedError` + `Result.err` |
-| Infrastructure errors | network, DB, file I/O | `Result.tryPromise` + mapped error |
-| Programmer defects | bad assumptions, null deref | leave throwing; defects become `Panic` inside Result callbacks |
+| Category              | Examples                    | Target shape                                                   |
+| --------------------- | --------------------------- | -------------------------------------------------------------- |
+| Domain errors         | not found, validation, auth | `TaggedError` + `Result.err`                                   |
+| Infrastructure errors | network, DB, file I/O       | `Result.tryPromise` + mapped error                             |
+| Programmer defects    | bad assumptions, null deref | leave throwing; defects become `Panic` inside Result callbacks |
 
 ### 3. Migrate in this order
 
@@ -88,8 +88,7 @@ async function fetchUser(id: string): Promise<Result<User, ApiError | UnhandledE
       if (!res.ok) throw new ApiError({ status: res.status, message: `API ${res.status}` });
       return res.json() as Promise<User>;
     },
-    catch: (cause) =>
-      cause instanceof ApiError ? cause : new UnhandledException({ cause }),
+    catch: (cause) => (cause instanceof ApiError ? cause : new UnhandledException({ cause })),
   });
 }
 ```
@@ -147,8 +146,8 @@ A migration is complete when:
 
 ## In This Reference
 
-| File | Purpose |
-| --- | --- |
+| File                          | Purpose                                                   |
+| ----------------------------- | --------------------------------------------------------- |
 | `references/tagged-errors.md` | TaggedError patterns, matching, type guards, and examples |
 
 If `opensrc/` exists, treat it as the source of truth for implementation details and current API behavior.

@@ -149,14 +149,17 @@ const result = await Result.err("request failed").tapErrorAsync(async (error) =>
 `tapBothAsync` works the same way for async observers on either branch:
 
 ```ts
-const observed = await Result.tapBothAsync(Result.try(() => JSON.parse(input)), {
-  ok: async (value) => {
-    await trace("payload.decoded", { value });
+const observed = await Result.tapBothAsync(
+  Result.try(() => JSON.parse(input)),
+  {
+    ok: async (value) => {
+      await trace("payload.decoded", { value });
+    },
+    err: async (error) => {
+      await trace("payload.decode_failed", { error });
+    },
   },
-  err: async (error) => {
-    await trace("payload.decode_failed", { error });
-  },
-});
+);
 ```
 
 Static helpers support both data-first and data-last styles:
@@ -498,50 +501,50 @@ const result = Result.deserialize<User, ValidationError>(serialized);
 
 ### Result
 
-| Method                               | Description                                                                              |
-| ------------------------------------ | ---------------------------------------------------------------------------------------- |
-| `Result.ok(value)`                   | Create success                                                                           |
-| `Result.err(error)`                  | Create error                                                                             |
-| `Result.try(fn)`                     | Wrap throwing function                                                                   |
-| `Result.tryPromise(fn, config?)`     | Wrap async function with optional retry                                                  |
-| `Result.isOk(result)`                | Type guard for Ok                                                                        |
-| `Result.isError(result)`             | Type guard for Err                                                                       |
-| `Result.gen(fn)`                     | Generator composition                                                                    |
-| `Result.tryRecover(result, fn)`      | Recover error into same success type                                                     |
-| `Result.tryRecoverAsync(result, fn)` | Async recover error into same success type                                               |
-| `Result.tap(result, fn)`             | Run side effect on success and return original result                                    |
-| `Result.tapAsync(result, fn)`        | Run async side effect on success and return original result                              |
-| `Result.tapError(result, fn)`        | Run side effect on error and return original result                                      |
-| `Result.tapErrorAsync(result, fn)`   | Run async side effect on error and return original result                                |
-| `Result.tapBoth(result, handlers)`   | Run side effect on either branch and return original result                              |
-| `Result.tapBothAsync(result, handlers)` | Run async side effect on either branch and return original result                     |
-| `Result.await(promise)`              | Wrap Promise<Result> for generators                                                      |
-| `Result.serialize(result)`           | Convert Result to plain object                                                           |
-| `Result.deserialize(value)`          | Rehydrate serialized Result (returns `Err<ResultDeserializationError>` on invalid input) |
-| `Result.partition(results)`          | Split array into [okValues, errValues]                                                   |
-| `Result.flatten(result)`             | Flatten nested Result                                                                    |
+| Method                                  | Description                                                                              |
+| --------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `Result.ok(value)`                      | Create success                                                                           |
+| `Result.err(error)`                     | Create error                                                                             |
+| `Result.try(fn)`                        | Wrap throwing function                                                                   |
+| `Result.tryPromise(fn, config?)`        | Wrap async function with optional retry                                                  |
+| `Result.isOk(result)`                   | Type guard for Ok                                                                        |
+| `Result.isError(result)`                | Type guard for Err                                                                       |
+| `Result.gen(fn)`                        | Generator composition                                                                    |
+| `Result.tryRecover(result, fn)`         | Recover error into same success type                                                     |
+| `Result.tryRecoverAsync(result, fn)`    | Async recover error into same success type                                               |
+| `Result.tap(result, fn)`                | Run side effect on success and return original result                                    |
+| `Result.tapAsync(result, fn)`           | Run async side effect on success and return original result                              |
+| `Result.tapError(result, fn)`           | Run side effect on error and return original result                                      |
+| `Result.tapErrorAsync(result, fn)`      | Run async side effect on error and return original result                                |
+| `Result.tapBoth(result, handlers)`      | Run side effect on either branch and return original result                              |
+| `Result.tapBothAsync(result, handlers)` | Run async side effect on either branch and return original result                        |
+| `Result.await(promise)`                 | Wrap Promise<Result> for generators                                                      |
+| `Result.serialize(result)`              | Convert Result to plain object                                                           |
+| `Result.deserialize(value)`             | Rehydrate serialized Result (returns `Err<ResultDeserializationError>` on invalid input) |
+| `Result.partition(results)`             | Split array into [okValues, errValues]                                                   |
+| `Result.flatten(result)`                | Flatten nested Result                                                                    |
 
 ### Instance Methods
 
-| Method                 | Description                                |
-| ---------------------- | ------------------------------------------ |
-| `.isOk()`              | Type guard, narrows to Ok                  |
-| `.isErr()`             | Type guard, narrows to Err                 |
-| `.map(fn)`             | Transform success value                    |
-| `.mapError(fn)`        | Transform error value                      |
-| `.tryRecover(fn)`      | Recover error into same success type       |
-| `.tryRecoverAsync(fn)` | Async recover error into same success type |
-| `.andThen(fn)`         | Chain Result-returning function            |
-| `.andThenAsync(fn)`    | Chain async Result-returning function      |
-| `.match({ ok, err })`  | Pattern match                              |
-| `.unwrap(message?)`    | Extract value or throw                     |
-| `.unwrapOr(fallback)`  | Extract value or return fallback           |
-| `.tap(fn)`             | Side effect on success                     |
-| `.tapAsync(fn)`        | Async side effect on success               |
-| `.tapError(fn)`        | Side effect on error                       |
-| `.tapErrorAsync(fn)`   | Async side effect on error                 |
-| `.tapBoth(handlers)`   | Side effect on either branch               |
-| `.tapBothAsync(handlers)` | Async side effect on either branch      |
+| Method                    | Description                                |
+| ------------------------- | ------------------------------------------ |
+| `.isOk()`                 | Type guard, narrows to Ok                  |
+| `.isErr()`                | Type guard, narrows to Err                 |
+| `.map(fn)`                | Transform success value                    |
+| `.mapError(fn)`           | Transform error value                      |
+| `.tryRecover(fn)`         | Recover error into same success type       |
+| `.tryRecoverAsync(fn)`    | Async recover error into same success type |
+| `.andThen(fn)`            | Chain Result-returning function            |
+| `.andThenAsync(fn)`       | Chain async Result-returning function      |
+| `.match({ ok, err })`     | Pattern match                              |
+| `.unwrap(message?)`       | Extract value or throw                     |
+| `.unwrapOr(fallback)`     | Extract value or return fallback           |
+| `.tap(fn)`                | Side effect on success                     |
+| `.tapAsync(fn)`           | Async side effect on success               |
+| `.tapError(fn)`           | Side effect on error                       |
+| `.tapErrorAsync(fn)`      | Async side effect on error                 |
+| `.tapBoth(handlers)`      | Side effect on either branch               |
+| `.tapBothAsync(handlers)` | Async side effect on either branch         |
 
 ### TaggedError
 

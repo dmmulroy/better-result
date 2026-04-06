@@ -305,17 +305,14 @@ describe("TaggedError", () => {
         NotFoundError: (e: NotFoundError) => `not found: ${e.id}`,
       } as const;
 
-      const matcher = matchErrorPartial<AppError, string, typeof handlers>(
-        handlers,
-        (e) => {
-          // ValidationError | NetworkError remains
-          type Expected = ValidationError | NetworkError;
-          const _check: Expected = e;
-          // @ts-expect-error - e should NOT have 'id' property (NotFoundError excluded)
-          void e.id;
-          return `other: ${_check._tag}`;
-        },
-      );
+      const matcher = matchErrorPartial<AppError, string, typeof handlers>(handlers, (e) => {
+        // ValidationError | NetworkError remains
+        type Expected = ValidationError | NetworkError;
+        const _check: Expected = e;
+        // @ts-expect-error - e should NOT have 'id' property (NotFoundError excluded)
+        void e.id;
+        return `other: ${_check._tag}`;
+      });
 
       const error: AppError = new ValidationError({ field: "email", message: "invalid" });
       expect(matcher(error)).toBe("other: ValidationError");

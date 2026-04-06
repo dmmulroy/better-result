@@ -26,15 +26,15 @@ better-result/
 
 ## WHERE TO LOOK
 
-| Task                  | Location                      | Notes                                      |
-| --------------------- | ----------------------------- | ------------------------------------------ |
-| Add Result method     | `src/result.ts`               | Add to both `Ok` and `Err` classes         |
-| Add static combinator | `src/result.ts:782`           | `Result` namespace object                  |
-| New error type        | `src/error.ts`                | Extend `TaggedError`, add `_tag`           |
-| Change exports        | `src/index.ts`                | Barrel file                                |
-| Add tests             | `src/*.test.ts`               | Colocated, Bun test runner                 |
-| Update agent skills   | `skills/*/SKILL.md`           | Keep `name:` matching the directory name   |
-| Add skill references  | `skills/*/references/*.md`    | Prefer linked references over giant skills |
+| Task                  | Location                   | Notes                                      |
+| --------------------- | -------------------------- | ------------------------------------------ |
+| Add Result method     | `src/result.ts`            | Add to both `Ok` and `Err` classes         |
+| Add static combinator | `src/result.ts:782`        | `Result` namespace object                  |
+| New error type        | `src/error.ts`             | Extend `TaggedError`, add `_tag`           |
+| Change exports        | `src/index.ts`             | Barrel file                                |
+| Add tests             | `src/*.test.ts`            | Colocated, Bun test runner                 |
+| Update agent skills   | `skills/*/SKILL.md`        | Keep `name:` matching the directory name   |
+| Add skill references  | `skills/*/references/*.md` | Prefer linked references over giant skills |
 
 ## CODE MAP
 
