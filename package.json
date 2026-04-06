@@ -20,9 +20,7 @@
     "url": "https://github.com/dmmulroy/better-result"
   },
   "files": [
-    "dist",
-    "skills",
-    "src"
+    "dist"
   ],
   "type": "module",
   "main": "./dist/index.mjs",
