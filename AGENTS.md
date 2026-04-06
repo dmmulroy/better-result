@@ -17,23 +17,24 @@ better-result/
 │   ├── dual.ts          # data-first/data-last function helper
 │   ├── result.test.ts   # Result tests (~1600 lines)
 │   └── error.test.ts    # TaggedError tests (~250 lines)
-├── bin/
-│   └── cli.mjs          # Interactive CLI (JS, 830 lines, @clack/prompts)
-├── skills/              # AI agent skill definitions (YAML/MD)
+├── skills/              # Portable SKILL.md agent skills
+│   ├── better-result-adopt/
+│   └── better-result-migrate-v2/
 ├── dist/                # Compiled output (committed for npm)
 └── opensrc/             # Fetched dependency source for AI context
 ```
 
 ## WHERE TO LOOK
 
-| Task                  | Location            | Notes                              |
-| --------------------- | ------------------- | ---------------------------------- |
-| Add Result method     | `src/result.ts`     | Add to both `Ok` and `Err` classes |
-| Add static combinator | `src/result.ts:782` | `Result` namespace object          |
-| New error type        | `src/error.ts`      | Extend `TaggedError`, add `_tag`   |
-| Change exports        | `src/index.ts`      | Barrel file                        |
-| Add tests             | `src/*.test.ts`     | Colocated, Bun test runner         |
-| Modify CLI            | `bin/cli.mjs`       | Plain JS, uses @clack/prompts      |
+| Task                  | Location                      | Notes                                      |
+| --------------------- | ----------------------------- | ------------------------------------------ |
+| Add Result method     | `src/result.ts`               | Add to both `Ok` and `Err` classes         |
+| Add static combinator | `src/result.ts:782`           | `Result` namespace object                  |
+| New error type        | `src/error.ts`                | Extend `TaggedError`, add `_tag`           |
+| Change exports        | `src/index.ts`                | Barrel file                                |
+| Add tests             | `src/*.test.ts`               | Colocated, Bun test runner                 |
+| Update agent skills   | `skills/*/SKILL.md`           | Keep `name:` matching the directory name   |
+| Add skill references  | `skills/*/references/*.md`    | Prefer linked references over giant skills |
 
 ## CODE MAP
 
@@ -125,7 +126,7 @@ bun run fmt:check # oxfmt check
 
 - **dist/ committed**: Unusual; published via npm directly
 - **No CI/CD**: Tests/builds run locally only
-- **CLI ships with library**: `bin/cli.mjs` exposed as `better-result` binary
+- **Portable skills ship with library**: `skills/` is published for SKILL.md-compatible agents
 - **jj + git**: Dual VCS (Jujutsu colocated with git)
 
 <!-- opensrc:start -->

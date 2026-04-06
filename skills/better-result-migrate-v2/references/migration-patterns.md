@@ -1,55 +1,10 @@
----
-name: better-result-migrate-v2
-description: Migrate better-result TaggedError from v1 (class-based) to v2 (factory-based) API
----
+# Migration Patterns
 
-# better-result-migrate
+Concrete before/after examples for migrating `better-result` `TaggedError` code from v1 to v2.
 
-Migrate `better-result` TaggedError classes from v1 (class-based) to v2 (factory-based) API.
+## Pattern 1: Simple class
 
-## When to Use
-
-- Upgrading `better-result` from v1 to v2
-- User asks to migrate TaggedError classes
-- User mentions TaggedError v1/v2 migration
-
-## V1 API (old)
-
-```typescript
-class FooError extends TaggedError {
-  readonly _tag = "FooError" as const;
-  constructor(readonly id: string) {
-    super(`Foo: ${id}`);
-  }
-}
-
-// Static methods on TaggedError
-TaggedError.match(err, { ... })
-TaggedError.matchPartial(err, { ... }, fallback)
-TaggedError.isTaggedError(value)
-```
-
-## V2 API (new)
-
-```typescript
-class FooError extends TaggedError("FooError")<{
-  id: string;
-  message: string;
-}>() {}
-
-// Standalone functions
-matchError(err, { ... })
-matchErrorPartial(err, { ... }, fallback)
-isTaggedError(value)
-TaggedError.is(value)  // also available
-FooError.is(value)     // class-specific check
-```
-
-## Migration Rules
-
-### 1. Simple class (no constructor logic)
-
-```typescript
+```ts
 // BEFORE
 class FooError extends TaggedError {
   readonly _tag = "FooError" as const;
@@ -64,16 +19,13 @@ class FooError extends TaggedError("FooError")<{
   message: string;
 }>() {}
 
-// Usage changes:
-// BEFORE: new FooError("123")
-// AFTER:  new FooError({ id: "123", message: "Foo: 123" })
+// Usage
+new FooError({ id: "123", message: "Foo: 123" });
 ```
 
-### 2. Class with computed message
+## Pattern 2: Computed message
 
-Keep custom constructor to derive message:
-
-```typescript
+```ts
 // BEFORE
 class NotFoundError extends TaggedError {
   readonly _tag = "NotFoundError" as const;
@@ -95,15 +47,11 @@ class NotFoundError extends TaggedError("NotFoundError")<{
     super({ ...args, message: `${args.resource} not found: ${args.id}` });
   }
 }
-
-// Usage: new NotFoundError({ resource: "User", id: "123" })
 ```
 
-### 3. Class with validation
+## Pattern 3: Validation logic
 
-Keep validation in custom constructor:
-
-```typescript
+```ts
 // BEFORE
 class ValidationError extends TaggedError {
   readonly _tag = "ValidationError" as const;
@@ -125,9 +73,9 @@ class ValidationError extends TaggedError("ValidationError")<{
 }
 ```
 
-### 4. Class with additional runtime properties
+## Pattern 4: Extra runtime properties
 
-```typescript
+```ts
 // BEFORE
 class TimestampedError extends TaggedError {
   readonly _tag = "TimestampedError" as const;
@@ -149,43 +97,29 @@ class TimestampedError extends TaggedError("TimestampedError")<{
 }
 ```
 
-### 5. Static method migrations
+## Static Helper Migration
 
-| V1                                                  | V2                                           |
-| --------------------------------------------------- | -------------------------------------------- |
-| `TaggedError.match(err, handlers)`                  | `matchError(err, handlers)`                  |
+| v1 | v2 |
+| --- | --- |
+| `TaggedError.match(err, handlers)` | `matchError(err, handlers)` |
 | `TaggedError.matchPartial(err, handlers, fallback)` | `matchErrorPartial(err, handlers, fallback)` |
-| `TaggedError.isTaggedError(x)`                      | `isTaggedError(x)` or `TaggedError.is(x)`    |
+| `TaggedError.isTaggedError(value)` | `isTaggedError(value)` or `TaggedError.is(value)` |
 
-### 6. Import updates
+## Import Migration
 
-```typescript
+```ts
 // BEFORE
 import { TaggedError } from "better-result";
 
 // AFTER
-import { TaggedError, matchError, matchErrorPartial, isTaggedError } from "better-result";
+import { TaggedError, isTaggedError, matchError, matchErrorPartial } from "better-result";
 ```
 
-## Workflow
+## Full Example
 
-1. **Find TaggedError classes**: Search for `extends TaggedError` in the codebase
-2. **Analyze each class**:
-   - Extract `_tag` value
-   - Identify constructor params and their types
-   - Check for constructor logic (validation, computed message, side effects)
-3. **Transform class**:
-   - Simple: Remove constructor, add props to type parameter
-   - Complex: Keep custom constructor, transform to object args
-4. **Update usages**: Change `new FooError(a, b)` to `new FooError({ a, b, message })`
-5. **Migrate static methods**: `TaggedError.match` → `matchError`, etc.
-6. **Update imports**: Add `matchError`, `matchErrorPartial`, `isTaggedError`
+### Input
 
-## Example Full Migration
-
-**Input:**
-
-```typescript
+```ts
 import { TaggedError } from "better-result";
 
 class NotFoundError extends TaggedError {
@@ -214,9 +148,9 @@ const handleError = (err: AppError) =>
   });
 ```
 
-**Output:**
+### Output
 
-```typescript
+```ts
 import { TaggedError, matchError } from "better-result";
 
 class NotFoundError extends TaggedError("NotFoundError")<{
