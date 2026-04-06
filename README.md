@@ -4,16 +4,15 @@ Lightweight Result type for TypeScript with generator-based composition.
 
 ## Install
 
-**New to better-result?**
-
 ```sh
-npx better-result init
+npm install better-result
 ```
 
-**Upgrading from v1?**
+Or with Bun / pnpm:
 
 ```sh
-npx better-result migrate
+bun add better-result
+pnpm add better-result
 ```
 
 ## Quick Start
@@ -568,51 +567,60 @@ const result = Result.deserialize<User, ValidationError>(serialized);
 
 ## Agents & AI
 
-better-result ships with skills for AI coding agents (OpenCode, Claude Code, Codex).
+better-result ships with portable `SKILL.md` skills instead of an interactive CLI.
 
-### Quick Start
+### Available skills
+
+- `better-result-adopt` — adopt `better-result` in an existing codebase
+- `better-result-migrate-v2` — migrate v1 `TaggedError` usage to the v2 API
+
+These skills are designed to work with SKILL.md-compatible agents and skills.sh-compatible tooling.
+
+### Install with skills.sh-compatible tooling
 
 ```sh
-npx better-result init
+npx skills add dmmulroy/better-result@better-result-adopt
+npx skills add dmmulroy/better-result@better-result-migrate-v2
 ```
 
-Interactive setup that:
-
-1. Installs the better-result package
-2. Optionally fetches source code via [opensrc](https://github.com/vercel-labs/opensrc) for better AI context
-3. Installs the adoption skill + `/adopt-better-result` command for your agent
-4. Optionally launches your agent
-
-### What the skill does
-
-The `/adopt-better-result` command guides your AI agent through:
-
-- Converting try/catch to Result.try/tryPromise
-- Defining TaggedError classes for domain errors
-- Refactoring to generator composition
-- Migrating null checks to Result types
-
-### Supported agents
-
-| Agent    | Config detected         | Skill location                         |
-| -------- | ----------------------- | -------------------------------------- |
-| OpenCode | `.opencode/`            | `.opencode/skill/better-result-adopt/` |
-| Claude   | `.claude/`, `CLAUDE.md` | `.claude/skills/better-result-adopt/`  |
-| Codex    | `.codex/`, `AGENTS.md`  | `.codex/skills/better-result-adopt/`   |
-
-### Manual usage
-
-If you prefer not to use the interactive CLI:
+To install globally without prompts:
 
 ```sh
-# Install package
-npm install better-result
+npx skills add dmmulroy/better-result@better-result-adopt -g -y
+```
 
-# Add source for AI context (optional)
+### Manual installation
+
+If your agent does not support skills.sh installation, copy one of these directories into the agent's skills folder:
+
+- `skills/better-result-adopt/`
+- `skills/better-result-migrate-v2/`
+
+### What the skills do
+
+`better-result-adopt` guides an agent through:
+
+- converting try/catch to `Result.try` / `Result.tryPromise`
+- defining `TaggedError` classes for domain errors
+- refactoring nested error handling into `Result.gen`
+- replacing nullable or sentinel error returns with `Result`
+
+`better-result-migrate-v2` guides an agent through:
+
+- migrating `TaggedError` classes from v1 to v2 factory syntax
+- updating constructor call sites to the new object form
+- replacing `TaggedError.match*` helpers with standalone helpers
+- updating imports and verifying no old API usages remain
+
+### Optional source context
+
+For richer AI context in a consuming project:
+
+```sh
 npx opensrc better-result
-
-# Then copy skills/ directory to your agent's skill folder
 ```
+
+See [skills/README.md](skills/README.md) for a concise skill-install reference.
 
 ## License
 

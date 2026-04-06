@@ -48,19 +48,19 @@ isTaggedError(value)
 
 ## Automated Migration
 
-Install the OpenCode migration skill:
+Install the migration skill with skills.sh-compatible tooling:
 
 ```bash
-npx better-result-migrate v2
+npx skills add dmmulroy/better-result@better-result-migrate-v2
 ```
 
-Then in OpenCode:
+Then ask your agent to use the `better-result-migrate-v2` skill.
 
-```
-/skill better-result-migrate-v2
-```
+Example prompt:
 
-Ask: "Migrate my TaggedError classes to v2"
+```text
+Use the better-result-migrate-v2 skill to migrate my TaggedError classes to v2.
+```
 
 The skill handles:
 

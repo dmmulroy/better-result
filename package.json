@@ -19,11 +19,7 @@
     "type": "git",
     "url": "https://github.com/dmmulroy/better-result"
   },
-  "bin": {
-    "better-result": "./bin/cli.mjs"
-  },
   "files": [
-    "bin",
     "dist",
     "skills",
     "src"
@@ -47,9 +43,6 @@
     "lint": "oxlint .",
     "fmt": "oxfmt .",
     "fmt:check": "oxfmt --check ."
-  },
-  "dependencies": {
-    "@clack/prompts": "^0.11.0"
   },
   "devDependencies": {
     "@types/bun": "latest",
