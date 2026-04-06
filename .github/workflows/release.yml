@@ -29,8 +29,14 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
+
+      - name: Show tool versions
+        run: |
+          node -v
+          npm -v
+          bun --version
 
       - name: Install dependencies
         run: bun install --frozen-lockfile

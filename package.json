@@ -17,7 +17,7 @@
   "author": "Dillon Mulroy <dillon.mulroy@gmail.com> (https://github.com/dmmulroy)",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dmmulroy/better-result"
+    "url": "git+https://github.com/dmmulroy/better-result.git"
   },
   "files": [
     "dist/index.d.mts",
