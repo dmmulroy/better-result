@@ -62,14 +62,7 @@ jobs:
       - name: Pack release artifact
         run: npm pack
 
-      - name: Publish to npm with token
-        if: ${{ secrets.NPM_TOKEN != '' }}
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish to npm with trusted publishing
-        if: ${{ secrets.NPM_TOKEN == '' }}
+      - name: Publish to npm
         run: npm publish --access public --provenance
 
       - name: Create GitHub Release
