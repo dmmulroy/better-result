@@ -20,7 +20,8 @@
     "url": "https://github.com/dmmulroy/better-result"
   },
   "files": [
-    "dist"
+    "dist/index.mjs",
+    "dist/index.d.mts"
   ],
   "type": "module",
   "main": "./dist/index.mjs",
