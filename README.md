@@ -231,8 +231,13 @@ Use `mapError` on the output of `Result.gen()` to unify multiple error types int
 
 ```ts
 class ParseError extends TaggedError("ParseError")<{ message: string }>() {}
-class ValidationError extends TaggedError("ValidationError")<{ message: string }>() {}
-class AppError extends TaggedError("AppError")<{ source: string; message: string }>() {}
+class ValidationError extends TaggedError("ValidationError")<{
+  message: string;
+}>() {}
+class AppError extends TaggedError("AppError")<{
+  source: string;
+  message: string;
+}>() {}
 
 const result = Result.gen(function* () {
   const parsed = yield* parseInput(input); // Err: ParseError
@@ -260,7 +265,9 @@ Retry only for specific error types using `shouldRetry`:
 
 ```ts
 class NetworkError extends TaggedError("NetworkError")<{ message: string }>() {}
-class ValidationError extends TaggedError("ValidationError")<{ message: string }>() {}
+class ValidationError extends TaggedError("ValidationError")<{
+  message: string;
+}>() {}
 
 const result = await Result.tryPromise(
   {
@@ -459,7 +466,10 @@ class NetworkError extends TaggedError("NetworkError")<{
   message: string;
 }>() {
   constructor(args: { url: string; status: number }) {
-    super({ ...args, message: `Request to ${args.url} failed: ${args.status}` });
+    super({
+      ...args,
+      message: `Request to ${args.url} failed: ${args.status}`,
+    });
   }
 }
 
@@ -578,6 +588,7 @@ better-result ships with portable `SKILL.md` skills instead of an interactive CL
 
 - `better-result-adopt` — adopt `better-result` in an existing codebase
 - `better-result-migrate-v2` — migrate v1 `TaggedError` usage to the v2 API
+- `better-result-gen-patterns` — write idiomatic `Result.gen` code and avoid common anti-patterns
 
 These skills are designed to work with SKILL.md-compatible agents and skills.sh-compatible tooling.
 
@@ -586,6 +597,7 @@ These skills are designed to work with SKILL.md-compatible agents and skills.sh-
 ```sh
 npx skills add dmmulroy/better-result@better-result-adopt
 npx skills add dmmulroy/better-result@better-result-migrate-v2
+npx skills add dmmulroy/better-result@better-result-gen-patterns
 ```
 
 To install globally without prompts:
@@ -600,6 +612,7 @@ If your agent does not support skills.sh installation, copy one of these directo
 
 - `skills/better-result-adopt/`
 - `skills/better-result-migrate-v2/`
+- `skills/better-result-gen-patterns/`
 
 ### What the skills do
 
@@ -616,6 +629,12 @@ If your agent does not support skills.sh installation, copy one of these directo
 - updating constructor call sites to the new object form
 - replacing `TaggedError.match*` helpers with standalone helpers
 - updating imports and verifying no old API usages remain
+
+`better-result-gen-patterns` guides an agent through:
+
+- writing idiomatic `Result.gen` blocks with `yield*` for error propagation
+- avoiding anti-patterns like `isErr()` checks, try/catch, and bespoke lift utilities inside gen blocks
+- choosing between `Result.gen` and combinators (`map`, `andThen`) for the right situation
 
 ### Optional source context
 
