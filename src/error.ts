@@ -1,4 +1,5 @@
 import { dual } from "./dual";
+import { Result, Err } from "./result";
 
 /** Serialize cause for JSON output */
 const serializeCause = (cause: unknown): unknown => {
@@ -82,6 +83,15 @@ export const TaggedError: {
             stack: this.stack,
           };
         }
+
+        /**
+         * Makes this TaggedError yieldable in Result.gen blocks.
+         * Yielding short-circuits with this error, matching Err semantics.
+         */
+        *[Symbol.iterator](): Generator<Err<never, this>, never, unknown> {
+          yield* Result.err(this);
+          throw panic("Unreachable: Err yielded in TaggedError but generator continued", this);
+        }
       }
 
       // SAFETY: Cast needed for factory pattern - Props are assigned via Object.assign
@@ -90,8 +100,13 @@ export const TaggedError: {
   { is: isAnyTaggedError },
 );
 
+interface IterableError extends Error {
+  /** Makes TaggedError instances yieldable in Result.gen blocks. */
+  [Symbol.iterator](): Generator<Err<never, this>, never, unknown>;
+}
+
 /** Instance type produced by TaggedError factory */
-export type TaggedErrorInstance<Tag extends string, Props> = Error & {
+export type TaggedErrorInstance<Tag extends string, Props> = IterableError & {
   readonly _tag: Tag;
   toJSON(): object;
 } & Readonly<Props>;

@@ -414,7 +414,7 @@ Panic also provides `toJSON()` for error reporting services (Sentry, etc.).
 Build exhaustive error handling with discriminated unions:
 
 ```ts
-import { TaggedError, matchError, matchErrorPartial } from "better-result";
+import { Result, TaggedError, matchError, matchErrorPartial } from "better-result";
 
 // Factory API: TaggedError("Tag")<Props>()
 class NotFoundError extends TaggedError("NotFoundError")<{
@@ -448,6 +448,12 @@ matchErrorPartial(
 // Type guards
 TaggedError.is(value); // any tagged error
 NotFoundError.is(value); // specific class
+
+// Tagged errors can short-circuit Result.gen directly
+const result = Result.gen(function* () {
+  yield* new NotFoundError({ id: "123", message: "missing" });
+  return Result.ok("never reached");
+});
 ```
 
 For errors with computed messages, add a custom constructor:

@@ -6,6 +6,7 @@ import {
   matchErrorPartial,
   isTaggedError,
 } from "./error";
+import { Result } from "./result";
 
 class NotFoundError extends TaggedError("NotFoundError")<{
   id: string;
@@ -340,6 +341,17 @@ describe("TaggedError", () => {
 
       const error = new NotFoundError({ id: "123", message: "missing" });
       expect(matchAllHandlers(error)).toBe("not found: 123");
+    });
+
+    it("can be used in a Result.gen block", () => {
+      const error = new NotFoundError({ id: "69", message: "missing" });
+      const result = Result.gen(function* () {
+        yield* error;
+        return Result.ok("success");
+      });
+      expect(result.isErr()).toBe(true);
+      if (result.isOk()) throw "unreachable";
+      expect(result.error).toBe(error);
     });
   });
 });
