@@ -1,4 +1,4 @@
-import { assertType, describe, expect, expectTypeOf, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { Result, Ok, Err } from "./result";
 import { Panic, ResultDeserializationError, UnhandledException } from "./error";
 
@@ -1984,7 +1984,7 @@ describe("Type Inference", () => {
     });
   });
 
-  describe("tryRecover type inference", () => {
+  describe("tryRecover type preservation", () => {
     it("preserves success type while allowing error type change", () => {
       const r: Result<number, ErrorA> = Result.err(new ErrorA());
 
@@ -1998,32 +1998,9 @@ describe("Type Inference", () => {
         expect(recovered.error).toBeInstanceOf(ErrorB);
       }
     });
-
-    it("infers callback error, recovered success, and replacement error types", () => {
-      const r: Result<number, ErrorA> = Result.err(new ErrorA());
-
-      const recover = (error: ErrorA) => {
-        assertType<ErrorA>(error);
-        return error.message.length > 0 ? Result.ok("fallback") : Result.err(new ErrorB());
-      };
-
-      const method = r.tryRecover((error) => {
-        assertType<ErrorA>(error);
-        return recover(error);
-      });
-      const dataFirst = Result.tryRecover(r, (error) => {
-        assertType<ErrorA>(error);
-        return recover(error);
-      });
-      const dataLast = Result.tryRecover(recover)(r);
-
-      expectTypeOf(method).toEqualTypeOf<Result<number | string, ErrorB>>();
-      expectTypeOf(dataFirst).toEqualTypeOf<Result<number | string, ErrorB>>();
-      expectTypeOf(dataLast).toEqualTypeOf<Result<number | string, ErrorB>>();
-    });
   });
 
-  describe("tryRecoverAsync type inference", () => {
+  describe("tryRecoverAsync type preservation", () => {
     it("preserves success type while allowing error type change", async () => {
       const r: Result<number, ErrorA> = Result.err(new ErrorA());
 
@@ -2036,29 +2013,6 @@ describe("Type Inference", () => {
       if (Result.isError(recovered)) {
         expect(recovered.error).toBeInstanceOf(ErrorB);
       }
-    });
-
-    it("infers callback error, recovered success, and replacement error types", () => {
-      const r: Result<number, ErrorA> = Result.err(new ErrorA());
-
-      const recover = async (error: ErrorA) => {
-        assertType<ErrorA>(error);
-        return error.message.length > 0 ? Result.ok("fallback") : Result.err(new ErrorB());
-      };
-
-      const method = r.tryRecoverAsync((error) => {
-        assertType<ErrorA>(error);
-        return recover(error);
-      });
-      const dataFirst = Result.tryRecoverAsync(r, (error) => {
-        assertType<ErrorA>(error);
-        return recover(error);
-      });
-      const dataLast = Result.tryRecoverAsync(recover)(r);
-
-      expectTypeOf(method).toEqualTypeOf<Promise<Result<number | string, ErrorB>>>();
-      expectTypeOf(dataFirst).toEqualTypeOf<Promise<Result<number | string, ErrorB>>>();
-      expectTypeOf(dataLast).toEqualTypeOf<Promise<Result<number | string, ErrorB>>>();
     });
   });
 
@@ -2255,43 +2209,6 @@ describe("Type Inference", () => {
       const mapped = ok.mapError((): number => -1);
       expect(Result.isOk(mapped)).toBe(true);
       expect(mapped.unwrap()).toBe(42);
-    });
-
-    it("Err remains covariant after tryRecover", () => {
-      function getName(): Result<string, Error> {
-        return Result.err(new Error("missing"));
-      }
-
-      function getLength(): Result<number, Error> {
-        const r = getName();
-        if (r.isErr()) {
-          return r;
-        }
-        return Result.ok(r.value.length);
-      }
-
-      class FooError extends Error {}
-      class BarError extends Error {}
-
-      async function wrap<T>(
-        fn: () => Promise<Result<T, FooError>>,
-        refresh: () => Promise<Result<void, BarError>>,
-      ): Promise<Result<T, FooError | BarError>> {
-        const refreshed = await refresh();
-        if (refreshed.isErr()) {
-          return refreshed;
-        }
-        return fn();
-      }
-
-      const recoverable: Result<number, FooError> = Result.err(new FooError());
-      const recovered = recoverable.tryRecover(() => Result.ok<string, BarError>("fallback"));
-
-      assertType<Result<number, Error>>(getLength());
-      expectTypeOf(recovered).toEqualTypeOf<Result<number | string, BarError>>();
-      expectTypeOf(wrap<string>).returns.toEqualTypeOf<
-        Promise<Result<string, FooError | BarError>>
-      >();
     });
   });
 

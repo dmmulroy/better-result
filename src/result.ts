@@ -111,9 +111,9 @@ export class Ok<A, E = never> {
    * @example
    * ok(42).tryRecover(e => ok(e.length)) // Ok(42)
    */
-  tryRecover<U, E2>(_fn: (e: never) => Result<U, E2>): Ok<A | U, E2> {
-    // SAFETY: E is phantom on Ok (not used at runtime), and A⊂(A|U).
-    return this as unknown as Ok<A | U, E2>;
+  tryRecover<E2>(_fn: (e: never) => Result<A, E2>): Ok<A, E2> {
+    // SAFETY: E is phantom on Ok (not used at runtime).
+    return this as unknown as Ok<A, E2>;
   }
 
   /**
@@ -126,9 +126,9 @@ export class Ok<A, E = never> {
    * @example
    * await ok(42).tryRecoverAsync(async e => ok(e.length)) // Ok(42)
    */
-  tryRecoverAsync<U, E2>(_fn: (e: never) => Promise<Result<U, E2>>): Promise<Ok<A | U, E2>> {
-    // SAFETY: E is phantom on Ok (not used at runtime), and A⊂(A|U).
-    return Promise.resolve(this as unknown as Ok<A | U, E2>);
+  tryRecoverAsync<E2>(_fn: (e: never) => Promise<Result<A, E2>>): Promise<Ok<A, E2>> {
+    // SAFETY: E is phantom on Ok (not used at runtime).
+    return Promise.resolve(this as unknown as Ok<A, E2>);
   }
 
   /**
@@ -361,7 +361,7 @@ export class Err<T, E> {
    * @example
    * err("missing").tryRecover(e => e === "missing" ? ok(0) : err(new Error(e))) // Ok(0)
    */
-  tryRecover<U, E2>(fn: (e: E) => Result<U, E2>): Result<T | U, E2> {
+  tryRecover<E2>(fn: (e: E) => Result<T, E2>): Result<T, E2> {
     return tryOrPanic(() => fn(this.error), "tryRecover callback threw");
   }
 
@@ -376,7 +376,7 @@ export class Err<T, E> {
    * @example
    * await err("missing").tryRecoverAsync(async e => e === "missing" ? ok(0) : err(new Error(e))) // Ok(0)
    */
-  tryRecoverAsync<U, E2>(fn: (e: E) => Promise<Result<U, E2>>): Promise<Result<T | U, E2>> {
+  tryRecoverAsync<E2>(fn: (e: E) => Promise<Result<T, E2>>): Promise<Result<T, E2>> {
     return tryOrPanicAsync(() => fn(this.error), "tryRecoverAsync callback threw");
   }
 
@@ -740,9 +740,9 @@ const mapError: {
 });
 
 const tryRecover: {
-  <A, U, E, E2>(result: Result<A, E>, fn: (e: E) => Result<U, E2>): Result<A | U, E2>;
-  <E, U, E2>(fn: (e: E) => Result<U, E2>): <A>(result: Result<A, E>) => Result<A | U, E2>;
-} = dual(2, <A, U, E, E2>(result: Result<A, E>, fn: (e: E) => Result<U, E2>): Result<A | U, E2> => {
+  <A, E, E2>(result: Result<A, E>, fn: (e: E) => Result<A, E2>): Result<A, E2>;
+  <E, A, E2>(fn: (e: E) => Result<A, E2>): (result: Result<A, E>) => Result<A, E2>;
+} = dual(2, <A, E, E2>(result: Result<A, E>, fn: (e: E) => Result<A, E2>): Result<A, E2> => {
   return result.tryRecover(fn);
 });
 
@@ -754,19 +754,16 @@ const andThen: {
 });
 
 const tryRecoverAsync: {
-  <A, U, E, E2>(
-    result: Result<A, E>,
-    fn: (e: E) => Promise<Result<U, E2>>,
-  ): Promise<Result<A | U, E2>>;
-  <E, U, E2>(
-    fn: (e: E) => Promise<Result<U, E2>>,
-  ): <A>(result: Result<A, E>) => Promise<Result<A | U, E2>>;
+  <A, E, E2>(result: Result<A, E>, fn: (e: E) => Promise<Result<A, E2>>): Promise<Result<A, E2>>;
+  <E, A, E2>(
+    fn: (e: E) => Promise<Result<A, E2>>,
+  ): (result: Result<A, E>) => Promise<Result<A, E2>>;
 } = dual(
   2,
-  <A, U, E, E2>(
+  <A, E, E2>(
     result: Result<A, E>,
-    fn: (e: E) => Promise<Result<U, E2>>,
-  ): Promise<Result<A | U, E2>> => {
+    fn: (e: E) => Promise<Result<A, E2>>,
+  ): Promise<Result<A, E2>> => {
     return result.tryRecoverAsync(fn);
   },
 );
