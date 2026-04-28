@@ -148,8 +148,8 @@ type HandledTags<E extends AnyTaggedError, H> = Extract<keyof H, E["_tag"]>;
  * }));
  */
 export const matchError: {
-  <E extends AnyTaggedError, R>(err: E, handlers: MatchHandlers<E, R>): R;
   <E extends AnyTaggedError, R>(handlers: MatchHandlers<E, R>): (err: E) => R;
+  <E extends AnyTaggedError, R>(err: E, handlers: MatchHandlers<E, R>): R;
 } = dual(2, <E extends AnyTaggedError, R>(err: E, handlers: MatchHandlers<E, R>): R => {
   const handler = handlers[err._tag as E["_tag"]];
   // SAFETY: handler exists if handlers satisfies MatchHandlers<E, R>
@@ -165,11 +165,6 @@ export const matchError: {
  * }, (e) => `Unknown: ${e.message}`);
  */
 export const matchErrorPartial: {
-  <E extends AnyTaggedError, R, const H extends PartialMatchHandlers<E, R>>(
-    err: E,
-    handlers: H,
-    fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>> }>) => R,
-  ): R;
   <
     E extends AnyTaggedError,
     R,
@@ -178,6 +173,11 @@ export const matchErrorPartial: {
     handlers: H,
     fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>> }>) => R,
   ): (err: E) => R;
+  <E extends AnyTaggedError, R, const H extends PartialMatchHandlers<E, R>>(
+    err: E,
+    handlers: H,
+    fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>> }>) => R,
+  ): R;
 } = dual(
   3,
   <E extends AnyTaggedError, R, H extends PartialMatchHandlers<E, R>>(

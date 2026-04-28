@@ -38,14 +38,14 @@ type InferYieldErr<Y> = Y extends Err<never, infer E> ? E : never;
 type NoInfer<T> = [T][T extends unknown ? 0 : never];
 
 const tryFn: {
-  <A>(
-    thunk: () => Awaited<A>,
-    config?: { retry?: { times: number; }; },
-  ): Result<A, UnhandledException>;
   <A, E>(
     options: { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E>; },
     config?: { retry?: { times: number; }; },
   ): Result<A, E>;
+  <A>(
+    thunk: () => Awaited<A>,
+    config?: { retry?: { times: number; }; },
+  ): Result<A, UnhandledException>;
 } = <A, E>(
   options: (() => Awaited<A>) | { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E>; },
   config?: { retry?: { times: number; }; },
@@ -91,14 +91,14 @@ type RetryConfig<E = unknown> = {
 };
 
 const tryPromise: {
-  <A>(
-    thunk: () => Promise<A>,
-    config?: RetryConfig<UnhandledException>,
-  ): Promise<Result<A, UnhandledException>>;
   <A, E>(
     options: { try: () => Promise<A>; catch: (cause: unknown) => E | Promise<E>; },
     config?: RetryConfig<E>,
   ): Promise<Result<A, E>>;
+  <A>(
+    thunk: () => Promise<A>,
+    config?: RetryConfig<UnhandledException>,
+  ): Promise<Result<A, UnhandledException>>;
 } = async <A, E>(
   options:
     | (() => Promise<A>)
@@ -243,8 +243,8 @@ const andThenAsync: {
 );
 
 const match: {
-  <A, E, T>(result: Result<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T; }): T;
   <A, E, T>(handlers: { ok: (a: A) => T; err: (e: E) => T; }): (result: Result<A, E>) => T;
+  <A, E, T>(result: Result<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T; }): T;
 } = dual(
   2,
   <A, E, T>(result: Result<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T; }): T => {
@@ -287,17 +287,17 @@ const tapErrorAsync: {
 );
 
 const tapBoth: {
-  <A, E>(result: Result<A, E>, handlers: TapBothHandlers<A, E>): Result<A, E>;
   <A, E>(handlers: TapBothHandlers<A, E>): (result: Result<A, E>) => Result<A, E>;
+  <A, E>(result: Result<A, E>, handlers: TapBothHandlers<A, E>): Result<A, E>;
 } = dual(2, <A, E>(result: Result<A, E>, handlers: TapBothHandlers<A, E>): Result<A, E> => {
   return result.tapBoth(handlers);
 });
 
 const tapBothAsync: {
-  <A, E>(result: Result<A, E>, handlers: TapBothAsyncHandlers<A, E>): Promise<Result<A, E>>;
   <A, E>(
     handlers: TapBothAsyncHandlers<A, E>,
   ): (result: Result<A, E>) => Promise<Result<A, E>>;
+  <A, E>(result: Result<A, E>, handlers: TapBothAsyncHandlers<A, E>): Promise<Result<A, E>>;
 } = dual(
   2,
   <A, E>(
