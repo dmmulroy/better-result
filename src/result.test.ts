@@ -1910,6 +1910,167 @@ describe("Type Inference", () => {
     readonly _tag = "ErrorC" as const;
   }
 
+  describe("Result instance callback inference", () => {
+    type Expect<T extends true> = T;
+    type IsAny<T> = 0 extends 1 & T ? true : false;
+    type NotAny<T> = IsAny<T> extends true ? false : true;
+    type Equal<A, B> =
+      (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+
+    it("contextually types callbacks on Result unions", () => {
+      const compileTimeOnly = () => {
+        const getResult = (): Result<string, ErrorA> => Result.ok("ok");
+        const myResult = getResult();
+
+        const mapped = myResult.map((value) => {
+          type _ValueIsNotAny = Expect<NotAny<typeof value>>;
+          type _ValueIsString = Expect<Equal<typeof value, string>>;
+          // @ts-expect-error string has no property named nope
+          void value.nope;
+          return value.length;
+        });
+        expectTypeOf(mapped).toEqualTypeOf<Result<number, ErrorA>>();
+
+        const mappedError = myResult.mapError((error) => {
+          type _ErrorIsNotAny = Expect<NotAny<typeof error>>;
+          type _ErrorIsTagged = Expect<Equal<typeof error, ErrorA>>;
+          // @ts-expect-error ErrorA has no property named nope
+          void error.nope;
+          return error._tag;
+        });
+        expectTypeOf(mappedError).toEqualTypeOf<Result<string, "ErrorA">>();
+
+        const chained = myResult.andThen((value) => {
+          type _ValueIsNotAny = Expect<NotAny<typeof value>>;
+          type _ValueIsString = Expect<Equal<typeof value, string>>;
+          // @ts-expect-error string has no property named nope
+          void value.nope;
+          return Result.ok(value.length);
+        });
+        expectTypeOf(chained).toEqualTypeOf<Result<number, ErrorA>>();
+
+        const recovered = myResult.tryRecover((error) => {
+          type _ErrorIsNotAny = Expect<NotAny<typeof error>>;
+          type _ErrorIsTagged = Expect<Equal<typeof error, ErrorA>>;
+          // @ts-expect-error ErrorA has no property named nope
+          void error.nope;
+          return Result.err<string, ErrorB>(new ErrorB());
+        });
+        expectTypeOf(recovered).toEqualTypeOf<Result<string, ErrorB>>();
+
+        const chainedAsync = myResult.andThenAsync(async (value) => {
+          type _ValueIsNotAny = Expect<NotAny<typeof value>>;
+          type _ValueIsString = Expect<Equal<typeof value, string>>;
+          // @ts-expect-error string has no property named nope
+          void value.nope;
+          return Result.ok(value.length);
+        });
+        expectTypeOf(chainedAsync).toEqualTypeOf<Promise<Result<number, ErrorA>>>();
+
+        const recoveredAsync = myResult.tryRecoverAsync(async (error) => {
+          type _ErrorIsNotAny = Expect<NotAny<typeof error>>;
+          type _ErrorIsTagged = Expect<Equal<typeof error, ErrorA>>;
+          // @ts-expect-error ErrorA has no property named nope
+          void error.nope;
+          return Result.err<string, ErrorB>(new ErrorB());
+        });
+        expectTypeOf(recoveredAsync).toEqualTypeOf<Promise<Result<string, ErrorB>>>();
+
+        const tapped = myResult.tap((value) => {
+          type _ValueIsNotAny = Expect<NotAny<typeof value>>;
+          type _ValueIsString = Expect<Equal<typeof value, string>>;
+          value.toUpperCase();
+        });
+        expectTypeOf(tapped).toEqualTypeOf<Result<string, ErrorA>>();
+
+        const tappedAsync = myResult.tapAsync(async (value) => {
+          type _ValueIsNotAny = Expect<NotAny<typeof value>>;
+          type _ValueIsString = Expect<Equal<typeof value, string>>;
+          value.toUpperCase();
+        });
+        expectTypeOf(tappedAsync).toEqualTypeOf<Promise<Result<string, ErrorA>>>();
+
+        const tappedError = myResult.tapError((error) => {
+          type _ErrorIsNotAny = Expect<NotAny<typeof error>>;
+          type _ErrorIsTagged = Expect<Equal<typeof error, ErrorA>>;
+          void error._tag;
+        });
+        expectTypeOf(tappedError).toEqualTypeOf<Result<string, ErrorA>>();
+
+        const tappedErrorAsync = myResult.tapErrorAsync(async (error) => {
+          type _ErrorIsNotAny = Expect<NotAny<typeof error>>;
+          type _ErrorIsTagged = Expect<Equal<typeof error, ErrorA>>;
+          void error._tag;
+        });
+        expectTypeOf(tappedErrorAsync).toEqualTypeOf<Promise<Result<string, ErrorA>>>();
+
+        const tappedBoth = myResult.tapBoth({
+          ok: (value) => {
+            type _ValueIsNotAny = Expect<NotAny<typeof value>>;
+            type _ValueIsString = Expect<Equal<typeof value, string>>;
+            value.toUpperCase();
+          },
+          err: (error) => {
+            type _ErrorIsNotAny = Expect<NotAny<typeof error>>;
+            type _ErrorIsTagged = Expect<Equal<typeof error, ErrorA>>;
+            void error._tag;
+          },
+        });
+        expectTypeOf(tappedBoth).toEqualTypeOf<Result<string, ErrorA>>();
+
+        const tappedBothAsync = myResult.tapBothAsync({
+          ok: async (value) => {
+            type _ValueIsNotAny = Expect<NotAny<typeof value>>;
+            type _ValueIsString = Expect<Equal<typeof value, string>>;
+            value.toUpperCase();
+          },
+          err: async (error) => {
+            type _ErrorIsNotAny = Expect<NotAny<typeof error>>;
+            type _ErrorIsTagged = Expect<Equal<typeof error, ErrorA>>;
+            void error._tag;
+          },
+        });
+        expectTypeOf(tappedBothAsync).toEqualTypeOf<Promise<Result<string, ErrorA>>>();
+
+        const matched = myResult.match({
+          ok: (value) => {
+            type _ValueIsNotAny = Expect<NotAny<typeof value>>;
+            type _ValueIsString = Expect<Equal<typeof value, string>>;
+            return value.length;
+          },
+          err: (error) => {
+            type _ErrorIsNotAny = Expect<NotAny<typeof error>>;
+            type _ErrorIsTagged = Expect<Equal<typeof error, ErrorA>>;
+            return error._tag.length;
+          },
+        });
+        expectTypeOf(matched).toEqualTypeOf<number>();
+      };
+
+      expect(typeof compileTimeOnly).toBe("function");
+    });
+
+    it("preserves specialized direct variant return types", () => {
+      const compileTimeOnly = () => {
+        const okDirect = Result.ok<string, ErrorA>("ok");
+        const okMapped = okDirect.map((value) => value.length);
+        expectTypeOf(okMapped).toEqualTypeOf<Ok<number, ErrorA>>();
+
+        const okMappedError = okDirect.mapError((error: ErrorB) => error._tag);
+        expectTypeOf(okMappedError).toEqualTypeOf<Ok<string, "ErrorB">>();
+
+        const errDirect = Result.err<string, ErrorA>(new ErrorA());
+        const errMapped = errDirect.map((): number => 1);
+        expectTypeOf(errMapped).toEqualTypeOf<Err<number, ErrorA>>();
+
+        const errMappedError = errDirect.mapError((error) => error._tag);
+        expectTypeOf(errMappedError).toEqualTypeOf<Err<string, "ErrorA">>();
+      };
+
+      expect(typeof compileTimeOnly).toBe("function");
+    });
+  });
+
   describe("mapError on union", () => {
     it("transforms union error type to single type", () => {
       // Start with union error type
