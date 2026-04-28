@@ -9,10 +9,10 @@ const serializeCause = (cause: unknown): unknown => {
 };
 
 /** Prevents inference from a type position while supporting TypeScript 5.0. */
-type noinfer<T> = [T][T extends unknown ? 0 : never];
+type NoInfer<T> = [T][T extends unknown ? 0 : never];
 
 /** Any tagged error (for generic constraints) */
-type AnyTaggedError = Error & { readonly _tag: string };
+type AnyTaggedError = Error & { readonly _tag: string; };
 
 /** Type guard for any tagged error */
 const isAnyTaggedError = (value: unknown): value is AnyTaggedError => {
@@ -101,7 +101,7 @@ export type TaggedErrorInstance<Tag extends string, Props> = Error & {
 
 /** Class type produced by TaggedError factory */
 export type TaggedErrorClass<Tag extends string, Props> = {
-  new (
+  new(
     ...args: keyof Props extends never ? [args?: {}] : [args: Props]
   ): TaggedErrorInstance<Tag, Props>;
   /** Type guard for this error class */
@@ -110,7 +110,7 @@ export type TaggedErrorClass<Tag extends string, Props> = {
 
 /** Handler map for exhaustive matching */
 type MatchHandlers<E extends AnyTaggedError, R> = {
-  [K in E["_tag"]]: (err: Extract<E, { _tag: K }>) => R;
+  [K in E["_tag"]]: (err: Extract<E, { _tag: K; }>) => R;
 };
 
 /** Partial handler map for non-exhaustive matching */
@@ -141,7 +141,7 @@ export const matchError: {
 } = dual(2, <E extends AnyTaggedError, R>(err: E, handlers: MatchHandlers<E, R>): R => {
   const handler = handlers[err._tag as E["_tag"]];
   // SAFETY: handler exists if handlers satisfies MatchHandlers<E, R>
-  return handler(err as Extract<E, { _tag: (typeof err)["_tag"] }>);
+  return handler(err as Extract<E, { _tag: (typeof err)["_tag"]; }>);
 });
 
 /**
@@ -156,7 +156,7 @@ export const matchErrorPartial: {
   <E extends AnyTaggedError, R, const H extends PartialMatchHandlers<E, R>>(
     err: E,
     handlers: H,
-    fallback: (e: Exclude<E, { _tag: noinfer<HandledTags<E, H>> }>) => R,
+    fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>>; }>) => R,
   ): R;
   <
     E extends AnyTaggedError,
@@ -164,14 +164,14 @@ export const matchErrorPartial: {
     const H extends PartialMatchHandlers<E, R> = PartialMatchHandlers<E, R>,
   >(
     handlers: H,
-    fallback: (e: Exclude<E, { _tag: noinfer<HandledTags<E, H>> }>) => R,
+    fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>>; }>) => R,
   ): (err: E) => R;
 } = dual(
   3,
   <E extends AnyTaggedError, R, H extends PartialMatchHandlers<E, R>>(
     err: E,
     handlers: H,
-    fallback: (e: Exclude<E, { _tag: HandledTags<E, H> }>) => R,
+    fallback: (e: Exclude<E, { _tag: HandledTags<E, H>; }>) => R,
   ): R => {
     type K = HandledTags<E, H>;
     const handler = handlers[err._tag as K];
@@ -180,7 +180,7 @@ export const matchErrorPartial: {
       return handler(err as Parameters<NonNullable<typeof handler>>[0]);
     }
     // SAFETY: If no handler matched, err is in the Exclude type
-    return fallback(err as Exclude<E, { _tag: K }>);
+    return fallback(err as Exclude<E, { _tag: K; }>);
   },
 );
 
@@ -200,7 +200,7 @@ export class UnhandledException extends TaggedError("UnhandledException")<{
   message: string;
   cause: unknown;
 }>() {
-  constructor(args: { cause: unknown }) {
+  constructor(args: { cause: unknown; }) {
     const message =
       args.cause instanceof Error
         ? `Unhandled exception: ${args.cause.message}`
@@ -228,7 +228,7 @@ export class UnhandledException extends TaggedError("UnhandledException")<{
 export class Panic extends TaggedError("Panic")<{
   message: string;
   cause?: unknown;
-}>() {}
+}>() { }
 
 /**
  * Returned when Result.deserialize receives invalid input.
@@ -243,7 +243,7 @@ export class ResultDeserializationError extends TaggedError("ResultDeserializati
   message: string;
   value: unknown;
 }>() {
-  constructor(args: { value: unknown }) {
+  constructor(args: { value: unknown; }) {
     super({
       message: `Failed to deserialize value as Result: expected { status: "ok", value } or { status: "error", error }`,
       value: args.value,
