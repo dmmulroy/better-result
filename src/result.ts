@@ -1,5 +1,24 @@
-import { panic, ResultDeserializationError, UnhandledException } from "./error";
 import { dual } from "./dual";
+import { ResultDeserializationError, UnhandledException } from "./error";
+import {
+  Err,
+  Ok,
+  err,
+  isError,
+  isOk,
+  ok,
+  panic,
+  type AnyResult,
+  type InferErr,
+  type InferOk,
+  type Result as ResultType,
+  type TapBothAsyncHandlers,
+  type TapBothHandlers,
+} from "./core";
+
+export { Err, Ok } from "./core";
+export type { InferErr, InferOk } from "./core";
+export type Result<T, E> = import("./core").Result<T, E>;
 
 /** Executes fn, panics if it throws. */
 const tryOrPanic = <T>(fn: () => T, message: string): T => {
@@ -10,557 +29,6 @@ const tryOrPanic = <T>(fn: () => T, message: string): T => {
   }
 };
 
-/** Async version of tryOrPanic. */
-const tryOrPanicAsync = async <T>(fn: () => Promise<T>, message: string): Promise<T> => {
-  try {
-    return await fn();
-  } catch (cause) {
-    throw panic(message, cause);
-  }
-};
-
-type TapBothHandlers<A, E> = {
-  ok: (a: A) => void;
-  err: (e: E) => void;
-};
-
-type TapBothOkHandlers<A> = {
-  ok: (a: A) => void;
-  err: (e: never) => void;
-};
-
-type TapBothErrHandlers<E> = {
-  ok: (a: never) => void;
-  err: (e: E) => void;
-};
-
-type TapBothAsyncHandlers<A, E> = {
-  ok: (a: A) => Promise<void>;
-  err: (e: E) => Promise<void>;
-};
-
-type TapBothAsyncOkHandlers<A> = {
-  ok: (a: A) => Promise<void>;
-  err: (e: never) => Promise<void>;
-};
-
-type TapBothAsyncErrHandlers<E> = {
-  ok: (a: never) => Promise<void>;
-  err: (e: E) => Promise<void>;
-};
-
-/**
- * Successful result variant.
- *
- * @template A Success value type.
- * @template E Error type (phantom - for type unification).
- *
- * @example
- * const result = new Ok(42);
- * result.value // 42
- * result.status // "ok"
- */
-export class Ok<A, E = never> {
-  readonly status = "ok" as const;
-  constructor(readonly value: A) {}
-
-  /** Returns true, narrowing Result to Ok. */
-  isOk(): this is Ok<A, E> {
-    return true;
-  }
-
-  /** Returns false, narrowing Result to Err. */
-  isErr(): this is Err<A, E> {
-    return false;
-  }
-
-  /**
-   * Transforms success value.
-   *
-   * @template B Transformed type.
-   * @param fn Transformation function.
-   * @returns Ok with transformed value.
-   * @throws {Panic} If fn throws.
-   *
-   * @example
-   * ok(2).map(x => x * 2) // Ok(4)
-   */
-  map<B>(fn: (a: A) => B): Ok<B, E> {
-    return tryOrPanic(() => new Ok<B, E>(fn(this.value)), "map callback threw");
-  }
-
-  /**
-   * No-op on Ok, returns self with new phantom error type.
-   *
-   * @template E2 New error type.
-   * @param _fn Ignored.
-   * @returns Self with updated phantom E type.
-   */
-  mapError<E2>(_fn: (e: never) => E2): Ok<A, E2> {
-    // SAFETY: E is phantom on Ok (not used at runtime).
-    return this as unknown as Ok<A, E2>;
-  }
-
-  /**
-   * No-op on Ok, returns self with new phantom error type.
-   *
-   * @template E2 New error type.
-   * @param _fn Ignored.
-   * @returns Self with updated phantom E type.
-   *
-   * @example
-   * ok(42).tryRecover(e => ok(e.length)) // Ok(42)
-   */
-  tryRecover<E2>(_fn: (e: never) => Result<A, E2>): Ok<A, E2> {
-    // SAFETY: E is phantom on Ok (not used at runtime).
-    return this as unknown as Ok<A, E2>;
-  }
-
-  /**
-   * No-op on Ok, returns Promise of self with new phantom error type.
-   *
-   * @template E2 New error type.
-   * @param _fn Ignored.
-   * @returns Promise of self with updated phantom E type.
-   *
-   * @example
-   * await ok(42).tryRecoverAsync(async e => ok(e.length)) // Ok(42)
-   */
-  tryRecoverAsync<E2>(_fn: (e: never) => Promise<Result<A, E2>>): Promise<Ok<A, E2>> {
-    // SAFETY: E is phantom on Ok (not used at runtime).
-    return Promise.resolve(this as unknown as Ok<A, E2>);
-  }
-
-  /**
-   * Chains Result-returning function.
-   *
-   * @template B New success type.
-   * @template E2 New error type.
-   * @param fn Function returning Result.
-   * @returns Result from fn.
-   * @throws {Panic} If fn throws.
-   *
-   * @example
-   * ok(2).andThen(x => x > 0 ? ok(x) : err("negative")) // Ok(2)
-   */
-  andThen<B, E2>(fn: (a: A) => Result<B, E2>): Result<B, E | E2> {
-    return tryOrPanic(() => fn(this.value), "andThen callback threw");
-  }
-
-  /**
-   * Chains async Result-returning function.
-   *
-   * @template B New success type.
-   * @template E2 New error type.
-   * @param fn Async function returning Result.
-   * @returns Promise of Result from fn.
-   * @throws {Panic} If fn throws synchronously or rejects.
-   *
-   * @example
-   * await ok(1).andThenAsync(async x => ok(await fetchData(x)))
-   */
-  andThenAsync<B, E2>(fn: (a: A) => Promise<Result<B, E2>>): Promise<Result<B, E | E2>> {
-    return tryOrPanicAsync(() => fn(this.value), "andThenAsync callback threw");
-  }
-
-  /**
-   * Pattern matches on Result.
-   *
-   * @template T Return type.
-   * @param handlers Ok and err handlers.
-   * @returns Result of ok handler.
-   * @throws {Panic} If handler throws.
-   *
-   * @example
-   * ok(2).match({ ok: x => x * 2, err: () => 0 }) // 4
-   */
-  match<T>(handlers: { ok: (a: A) => T; err: (e: never) => T }): T {
-    return tryOrPanic(() => handlers.ok(this.value), "match ok handler threw");
-  }
-
-  /**
-   * Extracts value.
-   *
-   * @param _message Ignored.
-   * @returns The value.
-   *
-   * @example
-   * ok(42).unwrap() // 42
-   */
-  unwrap(_message?: string): A {
-    return this.value;
-  }
-
-  /**
-   * Returns value, ignoring fallback.
-   *
-   * @template B Fallback type.
-   * @param _fallback Ignored.
-   * @returns The value.
-   *
-   * @example
-   * ok(42).unwrapOr(0) // 42
-   */
-  unwrapOr<B>(_fallback: B): A {
-    return this.value;
-  }
-
-  /**
-   * Runs side effect, returns self.
-   *
-   * @param fn Side effect function.
-   * @returns Self.
-   * @throws {Panic} If fn throws.
-   *
-   * @example
-   * ok(2).tap(console.log).map(x => x * 2) // logs 2, returns Ok(4)
-   */
-  tap(fn: (a: A) => void): Ok<A, E> {
-    return tryOrPanic(() => {
-      fn(this.value);
-      return this;
-    }, "tap callback threw");
-  }
-
-  /**
-   * Runs async side effect, returns self.
-   *
-   * @param fn Async side effect function.
-   * @returns Promise of self.
-   * @throws {Panic} If fn throws synchronously or rejects.
-   *
-   * @example
-   * await ok(2).tapAsync(async x => await log(x))
-   */
-  tapAsync(fn: (a: A) => Promise<void>): Promise<Ok<A, E>> {
-    return tryOrPanicAsync(async () => {
-      await fn(this.value);
-      return this;
-    }, "tapAsync callback threw");
-  }
-
-  /**
-   * No-op on Ok, returns self.
-   *
-   * @param _fn Ignored.
-   * @returns Self.
-   */
-  tapError(_fn: (e: never) => void): Ok<A, E> {
-    return this;
-  }
-
-  /**
-   * No-op on Ok, returns Promise of self.
-   *
-   * @param _fn Ignored.
-   * @returns Promise of self.
-   */
-  tapErrorAsync(_fn: (e: never) => Promise<void>): Promise<Ok<A, E>> {
-    return Promise.resolve(this);
-  }
-
-  /**
-   * Runs ok side effect, skips err side effect, returns self.
-   *
-   * @param handlers Ok and err side effect handlers.
-   * @returns Self.
-   * @throws {Panic} If ok handler throws.
-   */
-  tapBoth(handlers: TapBothOkHandlers<A>): Ok<A, E> {
-    return tryOrPanic(() => {
-      handlers.ok(this.value);
-      return this;
-    }, "tapBoth ok callback threw");
-  }
-
-  /**
-   * Runs async ok side effect, skips err side effect, returns self.
-   *
-   * @param handlers Ok and err async side effect handlers.
-   * @returns Promise of self.
-   * @throws {Panic} If ok handler throws synchronously or rejects.
-   */
-  tapBothAsync(handlers: TapBothAsyncOkHandlers<A>): Promise<Ok<A, E>> {
-    return tryOrPanicAsync(async () => {
-      await handlers.ok(this.value);
-      return this;
-    }, "tapBothAsync ok callback threw");
-  }
-
-  /**
-   * Makes Ok yieldable in Result.gen blocks.
-   * Immediately returns the value without yielding.
-   * Yield type Err<never, E> matches Err's for proper union inference.
-   */
-  // oxlint-disable-next-line require-yield
-  *[Symbol.iterator](): Generator<Err<never, E>, A, unknown> {
-    return this.value;
-  }
-}
-
-/**
- * Error result variant.
- *
- * @template T Success type (phantom - for type unification with Ok).
- * @template E Error value type.
- *
- * @example
- * const result = new Err("failed");
- * result.error // "failed"
- * result.status // "error"
- */
-export class Err<T, E> {
-  readonly status = "error" as const;
-  constructor(readonly error: E) {}
-
-  /** Returns false, narrowing Result to Ok. */
-  isOk(): this is Ok<never, E> {
-    return false;
-  }
-
-  /** Returns true, narrowing Result to Err. */
-  isErr(): this is Err<T, E> {
-    return true;
-  }
-
-  /**
-   * No-op on Err, returns self with new phantom T.
-   *
-   * @template U New phantom success type.
-   * @param _fn Ignored.
-   * @returns Self.
-   */
-  map<U>(_fn: (a: never) => U): Err<U, E> {
-    // SAFETY: T is phantom (not used at runtime). Err only holds `error: E`.
-    return this as unknown as Err<U, E>;
-  }
-
-  /**
-   * Transforms error value.
-   *
-   * @template E2 Transformed error type.
-   * @param fn Transformation function.
-   * @returns Err with transformed error.
-   * @throws {Panic} If fn throws.
-   *
-   * @example
-   * err("fail").mapError(e => new Error(e)) // Err(Error("fail"))
-   */
-  mapError<E2>(fn: (e: E) => E2): Err<T, E2> {
-    return tryOrPanic(() => new Err<T, E2>(fn(this.error)), "mapError callback threw");
-  }
-
-  /**
-   * Attempts to recover from Err into the same success type.
-   *
-   * @template E2 New error type.
-   * @param fn Recovery function returning Result with the same success type.
-   * @returns Result from fn.
-   * @throws {Panic} If fn throws.
-   *
-   * @example
-   * err("missing").tryRecover(e => e === "missing" ? ok(0) : err(new Error(e))) // Ok(0)
-   */
-  tryRecover<E2>(fn: (e: E) => Result<T, E2>): Result<T, E2> {
-    return tryOrPanic(() => fn(this.error), "tryRecover callback threw");
-  }
-
-  /**
-   * Attempts to recover from Err into the same success type asynchronously.
-   *
-   * @template E2 New error type.
-   * @param fn Async recovery function returning Result with the same success type.
-   * @returns Promise of Result from fn.
-   * @throws {Panic} If fn throws synchronously or rejects.
-   *
-   * @example
-   * await err("missing").tryRecoverAsync(async e => e === "missing" ? ok(0) : err(new Error(e))) // Ok(0)
-   */
-  tryRecoverAsync<E2>(fn: (e: E) => Promise<Result<T, E2>>): Promise<Result<T, E2>> {
-    return tryOrPanicAsync(() => fn(this.error), "tryRecoverAsync callback threw");
-  }
-
-  /**
-   * No-op on Err, returns self with widened error type.
-   *
-   * @template U New phantom success type.
-   * @template E2 Additional error type.
-   * @param _fn Ignored.
-   * @returns Self.
-   */
-  andThen<U, E2>(_fn: (a: never) => Result<U, E2>): Err<U, E | E2> {
-    // SAFETY: T is phantom, E⊂(E|E2) so error type widens safely.
-    return this as unknown as Err<U, E | E2>;
-  }
-
-  /**
-   * No-op on Err, returns Promise of self with widened error type.
-   *
-   * @template U New phantom success type.
-   * @template E2 Additional error type.
-   * @param _fn Ignored.
-   * @returns Promise of self.
-   */
-  andThenAsync<U, E2>(_fn: (a: never) => Promise<Result<U, E2>>): Promise<Err<U, E | E2>> {
-    // SAFETY: T is phantom, E⊂(E|E2) so error type widens safely.
-    return Promise.resolve(this as unknown as Err<U, E | E2>);
-  }
-
-  /**
-   * Pattern matches on Result.
-   *
-   * @template R Return type.
-   * @param handlers Ok and err handlers.
-   * @returns Result of err handler.
-   * @throws {Panic} If handler throws.
-   *
-   * @example
-   * err("fail").match({ ok: x => x, err: e => e.length }) // 4
-   */
-  match<R>(handlers: { ok: (a: never) => R; err: (e: E) => R }): R {
-    return tryOrPanic(() => handlers.err(this.error), "match err handler threw");
-  }
-
-  /**
-   * Throws error with optional message.
-   *
-   * @param message Error message.
-   * @throws Always throws.
-   *
-   * @example
-   * err("fail").unwrap() // throws Error
-   * err("fail").unwrap("custom") // throws Error("custom")
-   */
-  unwrap(message?: string): never {
-    return panic(message ?? `Unwrap called on Err: ${String(this.error)}`, this.error);
-  }
-
-  /**
-   * Returns fallback value.
-   *
-   * @template U Fallback type.
-   * @param fallback Fallback value.
-   * @returns Fallback.
-   *
-   * @example
-   * err("fail").unwrapOr(42) // 42
-   */
-  unwrapOr<U>(fallback: U): T | U {
-    return fallback;
-  }
-
-  /**
-   * No-op on Err, returns self.
-   *
-   * @param _fn Ignored.
-   * @returns Self.
-   */
-  tap(_fn: (a: never) => void): Err<T, E> {
-    return this;
-  }
-
-  /**
-   * Runs side effect on error, returns self.
-   *
-   * @param fn Side effect function.
-   * @returns Self.
-   * @throws {Panic} If fn throws.
-   *
-   * @example
-   * err("fail").tapError(console.error) // logs "fail", returns Err("fail")
-   */
-  tapError(fn: (e: E) => void): Err<T, E> {
-    return tryOrPanic(() => {
-      fn(this.error);
-      return this;
-    }, "tapError callback threw");
-  }
-
-  /**
-   * No-op on Err, returns Promise of self.
-   *
-   * @param _fn Ignored.
-   * @returns Promise of self.
-   */
-  tapAsync(_fn: (a: never) => Promise<void>): Promise<Err<T, E>> {
-    return Promise.resolve(this);
-  }
-
-  /**
-   * Runs async side effect on error, returns self.
-   *
-   * @param fn Async side effect function.
-   * @returns Promise of self.
-   * @throws {Panic} If fn throws synchronously or rejects.
-   *
-   * @example
-   * await err("fail").tapErrorAsync(async e => await trace("request.failed", { e }))
-   */
-  tapErrorAsync(fn: (e: E) => Promise<void>): Promise<Err<T, E>> {
-    return tryOrPanicAsync(async () => {
-      await fn(this.error);
-      return this;
-    }, "tapErrorAsync callback threw");
-  }
-
-  /**
-   * Skips ok side effect, runs err side effect, returns self.
-   *
-   * @param handlers Ok and err side effect handlers.
-   * @returns Self.
-   * @throws {Panic} If err handler throws.
-   */
-  tapBoth(handlers: TapBothErrHandlers<E>): Err<T, E> {
-    return tryOrPanic(() => {
-      handlers.err(this.error);
-      return this;
-    }, "tapBoth err callback threw");
-  }
-
-  /**
-   * Skips async ok side effect, runs async err side effect, returns self.
-   *
-   * @param handlers Ok and err async side effect handlers.
-   * @returns Promise of self.
-   * @throws {Panic} If err handler throws synchronously or rejects.
-   */
-  tapBothAsync(handlers: TapBothAsyncErrHandlers<E>): Promise<Err<T, E>> {
-    return tryOrPanicAsync(async () => {
-      await handlers.err(this.error);
-      return this;
-    }, "tapBothAsync err callback threw");
-  }
-
-  /**
-   * Makes Err yieldable in Result.gen blocks.
-   * Yields Err<never, E> for proper union inference across multiple yields.
-   */
-  *[Symbol.iterator](): Generator<Err<never, E>, never, unknown> {
-    // SAFETY: T is phantom (not used at runtime). Casting to Err<never, E>
-    // ensures all yields have phantom T as `never`, enabling TypeScript to
-    // unify: Err<never, E1> | Err<never, E2> extracts to E1 | E2
-    yield this as unknown as Err<never, E>;
-    return panic("Unreachable: Err yielded in Result.gen but generator continued", this.error);
-  }
-}
-
-/**
- * Discriminated union representing operation success or failure.
- *
- * Both Ok and Err carry phantom types for the "other" variant:
- * - Ok<T, E>: T is value, E is phantom error type
- * - Err<T, E>: T is phantom success type, E is error
- *
- * This symmetric structure enables proper type inference in generator-based composition.
- *
- * @template T Success value type.
- * @template E Error value type.
- *
- * @example
- * type ParseResult = Result<number, ParseError>;
- */
-export type Result<T, E> = Ok<T, E> | Err<T, E>;
-
 /**
  * Extracts error type E from yield union in Result.gen.
  * Yields are always Err<never, E>, so we match on that pattern.
@@ -568,54 +36,20 @@ export type Result<T, E> = Ok<T, E> | Err<T, E>;
  */
 type InferYieldErr<Y> = Y extends Err<never, infer E> ? E : never;
 
-/**
- * Infer the Ok value type from a Result.
- * Distributive: InferOk<Ok<A, X> | Ok<B, Y>> = A | B
- */
-export type InferOk<R> = R extends Ok<infer T, unknown> ? T : never;
-
-/**
- * Infer the Err value type from a Result.
- * Distributive: InferErr<Err<X, A> | Err<Y, B>> = A | B
- */
-export type InferErr<R> = R extends Err<unknown, infer E> ? E : never;
-
-/**
- * Constraint for any union of Ok/Err types.
- * Used in Result.gen to accept flexible return types from generators.
- */
-type AnyResult = Ok<unknown, unknown> | Err<unknown, unknown>;
-
-function ok(): Ok<void, never>;
-function ok<A, E = never>(value: A): Ok<A, E>;
-function ok(value?: unknown): Ok<unknown, never> {
-  return new Ok(value);
-}
-
-const isOk = <A, E>(result: Result<A, E>): result is Ok<A, E> => {
-  return result.status === "ok";
-};
-
-const err = <T = never, E = unknown>(error: E): Err<T, E> => new Err<T, E>(error);
-
-const isError = <T, E>(result: Result<T, E>): result is Err<T, E> => {
-  return result.status === "error";
-};
-
 const tryFn: {
   <A>(
     thunk: () => Awaited<A>,
     config?: { retry?: { times: number } },
-  ): Result<A, UnhandledException>;
+  ): ResultType<A, UnhandledException>;
   <A, E>(
     options: { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E> },
     config?: { retry?: { times: number } },
-  ): Result<A, E>;
+  ): ResultType<A, E>;
 } = <A, E>(
   options: (() => Awaited<A>) | { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E> },
   config?: { retry?: { times: number } },
-): Result<A, E | UnhandledException> => {
-  const execute = (): Result<A, E | UnhandledException> => {
+): ResultType<A, E | UnhandledException> => {
+  const execute = (): ResultType<A, E | UnhandledException> => {
     if (typeof options === "function") {
       try {
         return ok(options());
@@ -659,18 +93,18 @@ const tryPromise: {
   <A>(
     thunk: () => Promise<A>,
     config?: RetryConfig<UnhandledException>,
-  ): Promise<Result<A, UnhandledException>>;
+  ): Promise<ResultType<A, UnhandledException>>;
   <A, E>(
     options: { try: () => Promise<A>; catch: (cause: unknown) => E | Promise<E> },
     config?: RetryConfig<E>,
-  ): Promise<Result<A, E>>;
+  ): Promise<ResultType<A, E>>;
 } = async <A, E>(
   options:
     | (() => Promise<A>)
     | { try: () => Promise<A>; catch: (cause: unknown) => E | Promise<E> },
   config?: RetryConfig<E | UnhandledException>,
-): Promise<Result<A, E | UnhandledException>> => {
-  const execute = async (): Promise<Result<A, E | UnhandledException>> => {
+): Promise<ResultType<A, E | UnhandledException>> => {
+  const execute = async (): Promise<ResultType<A, E | UnhandledException>> => {
     if (typeof options === "function") {
       try {
         return ok(await options());
@@ -726,124 +160,152 @@ const tryPromise: {
 };
 
 const map: {
-  <A, B, E>(result: Result<A, E>, fn: (a: A) => B): Result<B, E>;
-  <A, B>(fn: (a: A) => B): <E>(result: Result<A, E>) => Result<B, E>;
-} = dual(2, <A, B, E>(result: Result<A, E>, fn: (a: A) => B): Result<B, E> => {
+  <A, B, E>(result: ResultType<A, E>, fn: (a: A) => B): ResultType<B, E>;
+  <A, B>(fn: (a: A) => B): <E>(result: ResultType<A, E>) => ResultType<B, E>;
+} = dual(2, <A, B, E>(result: ResultType<A, E>, fn: (a: A) => B): ResultType<B, E> => {
   return result.map(fn);
 });
 
 const mapError: {
-  <A, E, E2>(result: Result<A, E>, fn: (e: E) => E2): Result<A, E2>;
-  <E, E2>(fn: (e: E) => E2): <A>(result: Result<A, E>) => Result<A, E2>;
-} = dual(2, <A, E, E2>(result: Result<A, E>, fn: (e: E) => E2): Result<A, E2> => {
+  <A, E, E2>(result: ResultType<A, E>, fn: (e: E) => E2): ResultType<A, E2>;
+  <E, E2>(fn: (e: E) => E2): <A>(result: ResultType<A, E>) => ResultType<A, E2>;
+} = dual(2, <A, E, E2>(result: ResultType<A, E>, fn: (e: E) => E2): ResultType<A, E2> => {
   return result.mapError(fn);
 });
 
 const tryRecover: {
-  <A, E, E2>(result: Result<A, E>, fn: (e: E) => Result<A, E2>): Result<A, E2>;
-  <E, A, E2>(fn: (e: E) => Result<A, E2>): (result: Result<A, E>) => Result<A, E2>;
-} = dual(2, <A, E, E2>(result: Result<A, E>, fn: (e: E) => Result<A, E2>): Result<A, E2> => {
-  return result.tryRecover(fn);
-});
+  <A, E, E2>(result: ResultType<A, E>, fn: (e: E) => ResultType<A, E2>): ResultType<A, E2>;
+  <E, A, E2>(fn: (e: E) => ResultType<A, E2>): (result: ResultType<A, E>) => ResultType<A, E2>;
+} = dual(
+  2,
+  <A, E, E2>(result: ResultType<A, E>, fn: (e: E) => ResultType<A, E2>): ResultType<A, E2> => {
+    return result.tryRecover(fn);
+  },
+);
 
 const andThen: {
-  <A, B, E, E2>(result: Result<A, E>, fn: (a: A) => Result<B, E2>): Result<B, E | E2>;
-  <A, B, E2>(fn: (a: A) => Result<B, E2>): <E>(result: Result<A, E>) => Result<B, E | E2>;
-} = dual(2, <A, B, E, E2>(result: Result<A, E>, fn: (a: A) => Result<B, E2>): Result<B, E | E2> => {
-  return result.andThen(fn);
-});
+  <A, B, E, E2>(result: ResultType<A, E>, fn: (a: A) => ResultType<B, E2>): ResultType<B, E | E2>;
+  <A, B, E2>(
+    fn: (a: A) => ResultType<B, E2>,
+  ): <E>(result: ResultType<A, E>) => ResultType<B, E | E2>;
+} = dual(
+  2,
+  <A, B, E, E2>(
+    result: ResultType<A, E>,
+    fn: (a: A) => ResultType<B, E2>,
+  ): ResultType<B, E | E2> => {
+    return result.andThen(fn);
+  },
+);
 
 const tryRecoverAsync: {
-  <A, E, E2>(result: Result<A, E>, fn: (e: E) => Promise<Result<A, E2>>): Promise<Result<A, E2>>;
+  <A, E, E2>(
+    result: ResultType<A, E>,
+    fn: (e: E) => Promise<ResultType<A, E2>>,
+  ): Promise<ResultType<A, E2>>;
   <E, A, E2>(
-    fn: (e: E) => Promise<Result<A, E2>>,
-  ): (result: Result<A, E>) => Promise<Result<A, E2>>;
+    fn: (e: E) => Promise<ResultType<A, E2>>,
+  ): (result: ResultType<A, E>) => Promise<ResultType<A, E2>>;
 } = dual(
   2,
   <A, E, E2>(
-    result: Result<A, E>,
-    fn: (e: E) => Promise<Result<A, E2>>,
-  ): Promise<Result<A, E2>> => {
+    result: ResultType<A, E>,
+    fn: (e: E) => Promise<ResultType<A, E2>>,
+  ): Promise<ResultType<A, E2>> => {
     return result.tryRecoverAsync(fn);
   },
 );
 
 const andThenAsync: {
   <A, B, E, E2>(
-    result: Result<A, E>,
-    fn: (a: A) => Promise<Result<B, E2>>,
-  ): Promise<Result<B, E | E2>>;
+    result: ResultType<A, E>,
+    fn: (a: A) => Promise<ResultType<B, E2>>,
+  ): Promise<ResultType<B, E | E2>>;
   <A, B, E2>(
-    fn: (a: A) => Promise<Result<B, E2>>,
-  ): <E>(result: Result<A, E>) => Promise<Result<B, E | E2>>;
+    fn: (a: A) => Promise<ResultType<B, E2>>,
+  ): <E>(result: ResultType<A, E>) => Promise<ResultType<B, E | E2>>;
 } = dual(
   2,
   <A, B, E, E2>(
-    result: Result<A, E>,
-    fn: (a: A) => Promise<Result<B, E2>>,
-  ): Promise<Result<B, E | E2>> => {
+    result: ResultType<A, E>,
+    fn: (a: A) => Promise<ResultType<B, E2>>,
+  ): Promise<ResultType<B, E | E2>> => {
     return result.andThenAsync(fn);
   },
 );
 
 const match: {
-  <A, E, T>(result: Result<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T }): T;
-  <A, E, T>(handlers: { ok: (a: A) => T; err: (e: E) => T }): (result: Result<A, E>) => T;
-} = dual(2, <A, E, T>(result: Result<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T }): T => {
-  return result.match(handlers);
-});
+  <A, E, T>(result: ResultType<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T }): T;
+  <A, E, T>(handlers: { ok: (a: A) => T; err: (e: E) => T }): (result: ResultType<A, E>) => T;
+} = dual(
+  2,
+  <A, E, T>(result: ResultType<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T }): T => {
+    return result.match(handlers);
+  },
+);
 
 const tap: {
-  <A, E>(result: Result<A, E>, fn: (a: A) => void): Result<A, E>;
-  <A>(fn: (a: A) => void): <E>(result: Result<A, E>) => Result<A, E>;
-} = dual(2, <A, E>(result: Result<A, E>, fn: (a: A) => void): Result<A, E> => {
+  <A, E>(result: ResultType<A, E>, fn: (a: A) => void): ResultType<A, E>;
+  <A>(fn: (a: A) => void): <E>(result: ResultType<A, E>) => ResultType<A, E>;
+} = dual(2, <A, E>(result: ResultType<A, E>, fn: (a: A) => void): ResultType<A, E> => {
   return result.tap(fn);
 });
 
 const tapAsync: {
-  <A, E>(result: Result<A, E>, fn: (a: A) => Promise<void>): Promise<Result<A, E>>;
-  <A>(fn: (a: A) => Promise<void>): <E>(result: Result<A, E>) => Promise<Result<A, E>>;
-} = dual(2, <A, E>(result: Result<A, E>, fn: (a: A) => Promise<void>): Promise<Result<A, E>> => {
-  return result.tapAsync(fn);
-});
+  <A, E>(result: ResultType<A, E>, fn: (a: A) => Promise<void>): Promise<ResultType<A, E>>;
+  <A>(fn: (a: A) => Promise<void>): <E>(result: ResultType<A, E>) => Promise<ResultType<A, E>>;
+} = dual(
+  2,
+  <A, E>(result: ResultType<A, E>, fn: (a: A) => Promise<void>): Promise<ResultType<A, E>> => {
+    return result.tapAsync(fn);
+  },
+);
 
 const tapError: {
-  <A, E>(result: Result<A, E>, fn: (e: E) => void): Result<A, E>;
-  <E>(fn: (e: E) => void): <A>(result: Result<A, E>) => Result<A, E>;
-} = dual(2, <A, E>(result: Result<A, E>, fn: (e: E) => void): Result<A, E> => {
+  <A, E>(result: ResultType<A, E>, fn: (e: E) => void): ResultType<A, E>;
+  <E>(fn: (e: E) => void): <A>(result: ResultType<A, E>) => ResultType<A, E>;
+} = dual(2, <A, E>(result: ResultType<A, E>, fn: (e: E) => void): ResultType<A, E> => {
   return result.tapError(fn);
 });
 
 const tapErrorAsync: {
-  <A, E>(result: Result<A, E>, fn: (e: E) => Promise<void>): Promise<Result<A, E>>;
-  <E>(fn: (e: E) => Promise<void>): <A>(result: Result<A, E>) => Promise<Result<A, E>>;
-} = dual(2, <A, E>(result: Result<A, E>, fn: (e: E) => Promise<void>): Promise<Result<A, E>> => {
-  return result.tapErrorAsync(fn);
-});
+  <A, E>(result: ResultType<A, E>, fn: (e: E) => Promise<void>): Promise<ResultType<A, E>>;
+  <E>(fn: (e: E) => Promise<void>): <A>(result: ResultType<A, E>) => Promise<ResultType<A, E>>;
+} = dual(
+  2,
+  <A, E>(result: ResultType<A, E>, fn: (e: E) => Promise<void>): Promise<ResultType<A, E>> => {
+    return result.tapErrorAsync(fn);
+  },
+);
 
 const tapBoth: {
-  <A, E>(result: Result<A, E>, handlers: TapBothHandlers<A, E>): Result<A, E>;
-  <A, E>(handlers: TapBothHandlers<A, E>): (result: Result<A, E>) => Result<A, E>;
-} = dual(2, <A, E>(result: Result<A, E>, handlers: TapBothHandlers<A, E>): Result<A, E> => {
+  <A, E>(result: ResultType<A, E>, handlers: TapBothHandlers<A, E>): ResultType<A, E>;
+  <A, E>(handlers: TapBothHandlers<A, E>): (result: ResultType<A, E>) => ResultType<A, E>;
+} = dual(2, <A, E>(result: ResultType<A, E>, handlers: TapBothHandlers<A, E>): ResultType<A, E> => {
   return result.tapBoth(handlers);
 });
 
 const tapBothAsync: {
-  <A, E>(result: Result<A, E>, handlers: TapBothAsyncHandlers<A, E>): Promise<Result<A, E>>;
-  <A, E>(handlers: TapBothAsyncHandlers<A, E>): (result: Result<A, E>) => Promise<Result<A, E>>;
+  <A, E>(result: ResultType<A, E>, handlers: TapBothAsyncHandlers<A, E>): Promise<ResultType<A, E>>;
+  <A, E>(
+    handlers: TapBothAsyncHandlers<A, E>,
+  ): (result: ResultType<A, E>) => Promise<ResultType<A, E>>;
 } = dual(
   2,
-  <A, E>(result: Result<A, E>, handlers: TapBothAsyncHandlers<A, E>): Promise<Result<A, E>> => {
+  <A, E>(
+    result: ResultType<A, E>,
+    handlers: TapBothAsyncHandlers<A, E>,
+  ): Promise<ResultType<A, E>> => {
     return result.tapBothAsync(handlers);
   },
 );
 
-const unwrap = <A, E>(result: Result<A, E>, message?: string): A => {
+const unwrap = <A, E>(result: ResultType<A, E>, message?: string): A => {
   return result.unwrap(message);
 };
 
 /** Validates that a value is a Result instance. Throws with helpful message if not. */
-function assertIsResult(value: unknown): asserts value is Result<unknown, unknown> {
+function assertIsResult(value: unknown): asserts value is ResultType<unknown, unknown> {
   if (
     value !== null &&
     typeof value === "object" &&
@@ -859,27 +321,27 @@ function assertIsResult(value: unknown): asserts value is Result<unknown, unknow
 }
 
 const unwrapOr: {
-  <A, E, B>(result: Result<A, E>, fallback: B): A | B;
-  <B>(fallback: B): <A, E>(result: Result<A, E>) => A | B;
-} = dual(2, <A, E, B>(result: Result<A, E>, fallback: B): A | B => {
+  <A, E, B>(result: ResultType<A, E>, fallback: B): A | B;
+  <B>(fallback: B): <A, E>(result: ResultType<A, E>) => A | B;
+} = dual(2, <A, E, B>(result: ResultType<A, E>, fallback: B): A | B => {
   return result.unwrapOr(fallback);
 });
 
 const gen: {
   <Yield extends Err<never, unknown>, R extends AnyResult>(
     body: () => Generator<Yield, R, unknown>,
-  ): Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
+  ): ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
   <Yield extends Err<never, unknown>, R extends AnyResult, This>(
     body: (this: This) => Generator<Yield, R, unknown>,
     thisArg: This,
-  ): Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
+  ): ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
   <Yield extends Err<never, unknown>, R extends AnyResult>(
     body: () => AsyncGenerator<Yield, R, unknown>,
-  ): Promise<Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
+  ): Promise<ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
   <Yield extends Err<never, unknown>, R extends AnyResult, This>(
     body: (this: This) => AsyncGenerator<Yield, R, unknown>,
     thisArg: This,
-  ): Promise<Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
+  ): Promise<ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
 } = (<Yield extends Err<never, unknown>, R extends AnyResult, This>(
   body:
     | (() => Generator<Yield, R, unknown>)
@@ -888,8 +350,8 @@ const gen: {
     | ((this: This) => AsyncGenerator<Yield, R, unknown>),
   thisArg?: This,
 ):
-  | Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>
-  | Promise<Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>> => {
+  | ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>
+  | Promise<ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>> => {
   // SAFETY: body.call binds thisArg; cast needed due to union of function signatures
   const iterator = (body as (this: This) => Generator<Yield, R, unknown>).call(thisArg as This);
 
@@ -919,7 +381,7 @@ const gen: {
         }
       }
 
-      return state.value as Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
+      return state.value as ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
     })();
   }
 
@@ -947,26 +409,26 @@ const gen: {
     }
   }
 
-  return state.value as Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
+  return state.value as ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
 }) as {
   <Yield extends Err<never, unknown>, R extends AnyResult>(
     body: () => Generator<Yield, R, unknown>,
-  ): Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
+  ): ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
   <Yield extends Err<never, unknown>, R extends AnyResult, This>(
     body: (this: This) => Generator<Yield, R, unknown>,
     thisArg: This,
-  ): Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
+  ): ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
   <Yield extends Err<never, unknown>, R extends AnyResult>(
     body: () => AsyncGenerator<Yield, R, unknown>,
-  ): Promise<Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
+  ): Promise<ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
   <Yield extends Err<never, unknown>, R extends AnyResult, This>(
     body: (this: This) => AsyncGenerator<Yield, R, unknown>,
     thisArg: This,
-  ): Promise<Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
+  ): Promise<ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
 };
 
 async function* resultAwait<T, E>(
-  promise: Promise<Result<T, E>>,
+  promise: Promise<ResultType<T, E>>,
 ): AsyncGenerator<Err<never, E>, T, unknown> {
   const result = await promise;
   return yield* result;
@@ -996,17 +458,17 @@ function isSerializedResult(obj: unknown): obj is SerializedResult<unknown, unkn
   );
 }
 
-const serialize = <T, E>(result: Result<T, E>): SerializedResult<T, E> => {
+const serialize = <T, E>(result: ResultType<T, E>): SerializedResult<T, E> => {
   return result.status === "ok"
     ? { status: "ok", value: result.value }
     : { status: "error", error: result.error };
 };
 
-const deserialize = <T, E>(value: unknown): Result<T, E | ResultDeserializationError> => {
+const deserialize = <T, E>(value: unknown): ResultType<T, E | ResultDeserializationError> => {
   if (isSerializedResult(value)) {
     return value.status === "ok"
-      ? (new Ok(value.value) as Result<T, E>)
-      : (new Err(value.error) as Result<T, E>);
+      ? (new Ok(value.value) as ResultType<T, E>)
+      : (new Err(value.error) as ResultType<T, E>);
   }
   return err(new ResultDeserializationError({ value }));
 };
@@ -1014,11 +476,11 @@ const deserialize = <T, E>(value: unknown): Result<T, E | ResultDeserializationE
 /**
  * @deprecated Use `Result.deserialize` instead. Will be removed in 3.0.
  */
-const hydrate = <T, E>(value: unknown): Result<T, E | ResultDeserializationError> => {
+const hydrate = <T, E>(value: unknown): ResultType<T, E | ResultDeserializationError> => {
   return deserialize(value);
 };
 
-const partition = <T, E>(results: readonly Result<T, E>[]): [T[], E[]] => {
+const partition = <T, E>(results: readonly ResultType<T, E>[]): [T[], E[]] => {
   const oks: T[] = [];
   const errs: E[] = [];
   for (const r of results) {
@@ -1035,10 +497,10 @@ const partition = <T, E>(results: readonly Result<T, E>[]): [T[], E[]] => {
  * Flattens nested Result into single Result.
  *
  * @example
- * const nested: Result<Result<number, E1>, E2> = Result.ok(Result.ok(42));
- * const flat: Result<number, E1 | E2> = Result.flatten(nested); // Ok(42)
+ * const nested: ResultType<ResultType<number, E1>, E2> = Result.ok(Result.ok(42));
+ * const flat: ResultType<number, E1 | E2> = Result.flatten(nested); // Ok(42)
  */
-const flatten = <T, E, E2>(result: Result<Result<T, E>, E2>): Result<T, E | E2> => {
+const flatten = <T, E, E2>(result: ResultType<ResultType<T, E>, E2>): ResultType<T, E | E2> => {
   if (result.status === "ok") {
     return result.value;
   }
@@ -1251,7 +713,7 @@ export const Result = {
    *   const b = yield* getB(a); // Err: ErrorB
    *   return Result.ok({ a, b });
    * });
-   * // Result<{a, b}, ErrorA | ErrorB>
+   * // ResultType<{a, b}, ErrorA | ErrorB>
    *
    * @example
    * // Normalize error types with mapError
@@ -1260,7 +722,7 @@ export const Result = {
    *   const b = yield* getB(a);
    *   return Result.ok({ a, b });
    * }).mapError(e => new UnifiedError(e._tag, e.message));
-   * // Result<{a, b}, UnifiedError>
+   * // ResultType<{a, b}, UnifiedError>
    *
    * @example
    * // Async with Result.await

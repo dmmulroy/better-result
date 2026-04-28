@@ -1,5 +1,5 @@
 import { dual } from "./dual";
-import { Result, Err } from "./result";
+import { err, panic, type Err } from "./core";
 
 /** Serialize cause for JSON output */
 const serializeCause = (cause: unknown): unknown => {
@@ -89,8 +89,8 @@ export const TaggedError: {
          * Yielding short-circuits with this error, matching Err semantics.
          */
         *[Symbol.iterator](): Generator<Err<never, this>, never, unknown> {
-          yield* Result.err(this);
-          throw panic("Unreachable: Err yielded in TaggedError but generator continued", this);
+          yield* err(this);
+          return panic("Unreachable: Err yielded in TaggedError but generator continued", this);
         }
       }
 
@@ -222,27 +222,6 @@ export class UnhandledException extends TaggedError("UnhandledException")<{
 }
 
 /**
- * Unrecoverable error — user code threw inside Result operations.
- *
- * @example
- * // Panic in generator cleanup:
- * Result.gen(function* () {
- *   try {
- *     yield* Result.err("expected error");
- *   } finally {
- *     throw new Error("cleanup failed");  // Panic!
- *   }
- * });
- *
- * // Panic in combinator:
- * Result.ok(1).map(() => { throw new Error("oops"); });  // Panic!
- */
-export class Panic extends TaggedError("Panic")<{
-  message: string;
-  cause?: unknown;
-}>() {}
-
-/**
  * Returned when Result.deserialize receives invalid input.
  *
  * @example
@@ -263,22 +242,4 @@ export class ResultDeserializationError extends TaggedError("ResultDeserializati
   }
 }
 
-/**
- * Type guard for Panic instances.
- *
- * @example
- * if (isPanic(value)) { value.cause }
- */
-export const isPanic = (value: unknown): value is Panic => {
-  return value instanceof Panic;
-};
-
-/**
- * Throw an unrecoverable Panic.
- *
- * @example
- * panic("something went wrong", cause);
- */
-export const panic = (message: string, cause?: unknown): never => {
-  throw new Panic({ message, cause });
-};
+export { Panic, isPanic, panic } from "./core";
