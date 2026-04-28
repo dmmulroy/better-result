@@ -11,17 +11,17 @@ import { Result, type Result as ResultType } from "./result";
 class NotFoundError extends TaggedError("NotFoundError")<{
   id: string;
   message: string;
-}>() {}
+}> {}
 
 class ValidationError extends TaggedError("ValidationError")<{
   field: string;
   message: string;
-}>() {}
+}> {}
 
 class NetworkError extends TaggedError("NetworkError")<{
   url: string;
   message: string;
-}>() {}
+}> {}
 
 type AppError = NotFoundError | ValidationError | NetworkError;
 
@@ -53,7 +53,7 @@ describe("TaggedError", () => {
       class ErrorWithCause extends TaggedError("ErrorWithCause")<{
         message: string;
         cause: unknown;
-      }>() {}
+      }> {}
 
       const error = new ErrorWithCause({ message: "wrapper", cause });
       expect(error.stack).toContain("Caused by:");
@@ -65,11 +65,11 @@ describe("TaggedError", () => {
       class MiddleError extends TaggedError("MiddleError")<{
         message: string;
         cause: unknown;
-      }>() {}
+      }> {}
       class OuterError extends TaggedError("OuterError")<{
         message: string;
         cause: unknown;
-      }>() {}
+      }> {}
 
       const middle = new MiddleError({ message: "middle", cause: inner });
       const outer = new OuterError({ message: "outer", cause: middle });
@@ -116,21 +116,21 @@ describe("TaggedError", () => {
     });
 
     it("FooError.is(fooError) is true", () => {
-      class FooError extends TaggedError("FooError")<{ message: string }>() {}
+      class FooError extends TaggedError("FooError")<{ message: string }> {}
       const fooError = new FooError({ message: "foo" });
       expect(FooError.is(fooError)).toBe(true);
     });
 
     it("BarError.is(fooError) is false", () => {
-      class FooError extends TaggedError("FooError")<{ message: string }>() {}
-      class BarError extends TaggedError("BarError")<{ message: string }>() {}
+      class FooError extends TaggedError("FooError")<{ message: string }> {}
+      class BarError extends TaggedError("BarError")<{ message: string }> {}
       const fooError = new FooError({ message: "foo" });
       expect(BarError.is(fooError)).toBe(false);
     });
 
     it("isTaggedError(fooError) is true for any TaggedError", () => {
-      class FooError extends TaggedError("FooError")<{ message: string }>() {}
-      class BarError extends TaggedError("BarError")<{ message: string }>() {}
+      class FooError extends TaggedError("FooError")<{ message: string }> {}
+      class BarError extends TaggedError("BarError")<{ message: string }> {}
       const fooError = new FooError({ message: "foo" });
       const barError = new BarError({ message: "bar" });
       expect(isTaggedError(fooError)).toBe(true);
@@ -138,8 +138,8 @@ describe("TaggedError", () => {
     });
 
     it("TaggedError.is(fooError) is true for any TaggedError", () => {
-      class FooError extends TaggedError("FooError")<{ message: string }>() {}
-      class BarError extends TaggedError("BarError")<{ message: string }>() {}
+      class FooError extends TaggedError("FooError")<{ message: string }> {}
+      class BarError extends TaggedError("BarError")<{ message: string }> {}
       const fooError = new FooError({ message: "foo" });
       const barError = new BarError({ message: "bar" });
       expect(TaggedError.is(fooError)).toBe(true);
