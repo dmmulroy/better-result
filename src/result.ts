@@ -19,6 +19,8 @@ const tryOrPanicAsync = async <T>(fn: () => Promise<T>, message: string): Promis
   }
 };
 
+type NoInfer<T> = [T][T extends unknown ? 0 : never];
+
 type TapBothHandlers<A, E> = {
   ok: (a: A) => void;
   err: (e: E) => void;
@@ -62,7 +64,7 @@ type TapBothAsyncErrHandlers<E> = {
  */
 export class Ok<A, E = never> {
   readonly status = "ok" as const;
-  constructor(readonly value: A) {}
+  constructor(readonly value: A) { }
 
   /** Returns true, narrowing Result to Ok. */
   isOk(): this is Ok<A, E> {
@@ -109,9 +111,9 @@ export class Ok<A, E = never> {
    * @returns Self with updated phantom E type.
    *
    * @example
-   * ok(42).tryRecover(e => ok(e.length)) // Ok(42)
+   * ok(42).tryRecover(() => err("fallback")) // Ok(42)
    */
-  tryRecover<E2>(_fn: (e: never) => Result<A, E2>): Ok<A, E2> {
+  tryRecover<E2>(_fn: (e: never) => Result<NoInfer<A>, E2>): Ok<A, E2> {
     // SAFETY: E is phantom on Ok (not used at runtime).
     return this as unknown as Ok<A, E2>;
   }
@@ -124,9 +126,9 @@ export class Ok<A, E = never> {
    * @returns Promise of self with updated phantom E type.
    *
    * @example
-   * await ok(42).tryRecoverAsync(async e => ok(e.length)) // Ok(42)
+   * await ok(42).tryRecoverAsync(async () => err("fallback")) // Ok(42)
    */
-  tryRecoverAsync<E2>(_fn: (e: never) => Promise<Result<A, E2>>): Promise<Ok<A, E2>> {
+  tryRecoverAsync<E2>(_fn: (e: never) => Promise<Result<NoInfer<A>, E2>>): Promise<Ok<A, E2>> {
     // SAFETY: E is phantom on Ok (not used at runtime).
     return Promise.resolve(this as unknown as Ok<A, E2>);
   }
@@ -174,7 +176,7 @@ export class Ok<A, E = never> {
    * @example
    * ok(2).match({ ok: x => x * 2, err: () => 0 }) // 4
    */
-  match<T>(handlers: { ok: (a: A) => T; err: (e: never) => T }): T {
+  match<T>(handlers: { ok: (a: A) => T; err: (e: never) => T; }): T {
     return tryOrPanic(() => handlers.ok(this.value), "match ok handler threw");
   }
 
@@ -311,7 +313,7 @@ export class Ok<A, E = never> {
  */
 export class Err<T, E> {
   readonly status = "error" as const;
-  constructor(readonly error: E) {}
+  constructor(readonly error: E) { }
 
   /** Returns false, narrowing Result to Ok. */
   isOk(): this is Ok<never, E> {
@@ -359,9 +361,9 @@ export class Err<T, E> {
    * @throws {Panic} If fn throws.
    *
    * @example
-   * err("missing").tryRecover(e => e === "missing" ? ok(0) : err(new Error(e))) // Ok(0)
+   * err<number, string>("missing").tryRecover(e => e === "missing" ? ok(0) : err(new Error(e))) // Ok(0)
    */
-  tryRecover<E2>(fn: (e: E) => Result<T, E2>): Result<T, E2> {
+  tryRecover<E2>(fn: (e: E) => Result<NoInfer<T>, E2>): Result<T, E2> {
     return tryOrPanic(() => fn(this.error), "tryRecover callback threw");
   }
 
@@ -374,9 +376,9 @@ export class Err<T, E> {
    * @throws {Panic} If fn throws synchronously or rejects.
    *
    * @example
-   * await err("missing").tryRecoverAsync(async e => e === "missing" ? ok(0) : err(new Error(e))) // Ok(0)
+   * await err<number, string>("missing").tryRecoverAsync(async e => e === "missing" ? ok(0) : err(new Error(e))) // Ok(0)
    */
-  tryRecoverAsync<E2>(fn: (e: E) => Promise<Result<T, E2>>): Promise<Result<T, E2>> {
+  tryRecoverAsync<E2>(fn: (e: E) => Promise<Result<NoInfer<T>, E2>>): Promise<Result<T, E2>> {
     return tryOrPanicAsync(() => fn(this.error), "tryRecoverAsync callback threw");
   }
 
@@ -417,7 +419,7 @@ export class Err<T, E> {
    * @example
    * err("fail").match({ ok: x => x, err: e => e.length }) // 4
    */
-  match<R>(handlers: { ok: (a: never) => R; err: (e: E) => R }): R {
+  match<R>(handlers: { ok: (a: never) => R; err: (e: E) => R; }): R {
     return tryOrPanic(() => handlers.err(this.error), "match err handler threw");
   }
 
@@ -605,45 +607,45 @@ const isError = <T, E>(result: Result<T, E>): result is Err<T, E> => {
 const tryFn: {
   <A>(
     thunk: () => Awaited<A>,
-    config?: { retry?: { times: number } },
+    config?: { retry?: { times: number; }; },
   ): Result<A, UnhandledException>;
   <A, E>(
-    options: { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E> },
-    config?: { retry?: { times: number } },
+    options: { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E>; },
+    config?: { retry?: { times: number; }; },
   ): Result<A, E>;
 } = <A, E>(
-  options: (() => Awaited<A>) | { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E> },
-  config?: { retry?: { times: number } },
+  options: (() => Awaited<A>) | { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E>; },
+  config?: { retry?: { times: number; }; },
 ): Result<A, E | UnhandledException> => {
-  const execute = (): Result<A, E | UnhandledException> => {
-    if (typeof options === "function") {
-      try {
-        return ok(options());
-      } catch (cause) {
-        return err(new UnhandledException({ cause }));
+    const execute = (): Result<A, E | UnhandledException> => {
+      if (typeof options === "function") {
+        try {
+          return ok(options());
+        } catch (cause) {
+          return err(new UnhandledException({ cause }));
+        }
       }
-    }
-    try {
-      return ok(options.try());
-    } catch (originalCause) {
-      // If the user's catch handler throws, it's a defect — Panic
       try {
-        return err(options.catch(originalCause));
-      } catch (catchHandlerError) {
-        throw panic("Result.try catch handler threw", catchHandlerError);
+        return ok(options.try());
+      } catch (originalCause) {
+        // If the user's catch handler throws, it's a defect — Panic
+        try {
+          return err(options.catch(originalCause));
+        } catch (catchHandlerError) {
+          throw panic("Result.try catch handler threw", catchHandlerError);
+        }
       }
+    };
+
+    const times = config?.retry?.times ?? 0;
+    let result = execute();
+
+    for (let retry = 0; retry < times && result.status === "error"; retry++) {
+      result = execute();
     }
+
+    return result;
   };
-
-  const times = config?.retry?.times ?? 0;
-  let result = execute();
-
-  for (let retry = 0; retry < times && result.status === "error"; retry++) {
-    result = execute();
-  }
-
-  return result;
-};
 
 type RetryConfig<E = unknown> = {
   retry?: {
@@ -661,69 +663,69 @@ const tryPromise: {
     config?: RetryConfig<UnhandledException>,
   ): Promise<Result<A, UnhandledException>>;
   <A, E>(
-    options: { try: () => Promise<A>; catch: (cause: unknown) => E | Promise<E> },
+    options: { try: () => Promise<A>; catch: (cause: unknown) => E | Promise<E>; },
     config?: RetryConfig<E>,
   ): Promise<Result<A, E>>;
 } = async <A, E>(
   options:
     | (() => Promise<A>)
-    | { try: () => Promise<A>; catch: (cause: unknown) => E | Promise<E> },
+    | { try: () => Promise<A>; catch: (cause: unknown) => E | Promise<E>; },
   config?: RetryConfig<E | UnhandledException>,
 ): Promise<Result<A, E | UnhandledException>> => {
-  const execute = async (): Promise<Result<A, E | UnhandledException>> => {
-    if (typeof options === "function") {
-      try {
-        return ok(await options());
-      } catch (cause) {
-        return err(new UnhandledException({ cause }));
+    const execute = async (): Promise<Result<A, E | UnhandledException>> => {
+      if (typeof options === "function") {
+        try {
+          return ok(await options());
+        } catch (cause) {
+          return err(new UnhandledException({ cause }));
+        }
       }
-    }
-    try {
-      return ok(await options.try());
-    } catch (originalCause) {
-      // If the user's catch handler throws, it's a defect — Panic
       try {
-        return err(await options.catch(originalCause));
-      } catch (catchHandlerError) {
-        throw panic("Result.tryPromise catch handler threw", catchHandlerError);
+        return ok(await options.try());
+      } catch (originalCause) {
+        // If the user's catch handler throws, it's a defect — Panic
+        try {
+          return err(await options.catch(originalCause));
+        } catch (catchHandlerError) {
+          throw panic("Result.tryPromise catch handler threw", catchHandlerError);
+        }
       }
+    };
+
+    const retry = config?.retry;
+
+    if (!retry) {
+      return execute();
     }
-  };
 
-  const retry = config?.retry;
+    const getDelay = (retryAttempt: number): number => {
+      switch (retry.backoff) {
+        case "constant":
+          return retry.delayMs;
+        case "linear":
+          return retry.delayMs * (retryAttempt + 1);
+        case "exponential":
+          return retry.delayMs * 2 ** retryAttempt;
+      }
+    };
 
-  if (!retry) {
-    return execute();
-  }
+    const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-  const getDelay = (retryAttempt: number): number => {
-    switch (retry.backoff) {
-      case "constant":
-        return retry.delayMs;
-      case "linear":
-        return retry.delayMs * (retryAttempt + 1);
-      case "exponential":
-        return retry.delayMs * 2 ** retryAttempt;
+    let result = await execute();
+
+    const shouldRetryFn = retry.shouldRetry ?? (() => true);
+
+    for (let attempt = 0; attempt < retry.times; attempt++) {
+      if (result.status !== "error") break;
+      const error = result.error;
+      const shouldContinue = tryOrPanic(() => shouldRetryFn(error), "shouldRetry predicate threw");
+      if (!shouldContinue) break;
+      await sleep(getDelay(attempt));
+      result = await execute();
     }
+
+    return result;
   };
-
-  const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-  let result = await execute();
-
-  const shouldRetryFn = retry.shouldRetry ?? (() => true);
-
-  for (let attempt = 0; attempt < retry.times; attempt++) {
-    if (result.status !== "error") break;
-    const error = result.error;
-    const shouldContinue = tryOrPanic(() => shouldRetryFn(error), "shouldRetry predicate threw");
-    if (!shouldContinue) break;
-    await sleep(getDelay(attempt));
-    result = await execute();
-  }
-
-  return result;
-};
 
 const map: {
   <A, B, E>(result: Result<A, E>, fn: (a: A) => B): Result<B, E>;
@@ -740,11 +742,15 @@ const mapError: {
 });
 
 const tryRecover: {
-  <A, E, E2>(result: Result<A, E>, fn: (e: E) => Result<A, E2>): Result<A, E2>;
+  <A, E, E2>(result: Result<A, E>, fn: (e: E) => Result<NoInfer<A>, E2>): Result<A, E2>;
+  <E, E2>(fn: (e: E) => Result<never, E2>): <A>(result: Result<A, E>) => Result<A, E2>;
   <E, A, E2>(fn: (e: E) => Result<A, E2>): (result: Result<A, E>) => Result<A, E2>;
-} = dual(2, <A, E, E2>(result: Result<A, E>, fn: (e: E) => Result<A, E2>): Result<A, E2> => {
-  return result.tryRecover(fn);
-});
+} = dual(
+  2,
+  <A, E, E2>(result: Result<A, E>, fn: (e: E) => Result<NoInfer<A>, E2>): Result<A, E2> => {
+    return result.tryRecover(fn);
+  },
+);
 
 const andThen: {
   <A, B, E, E2>(result: Result<A, E>, fn: (a: A) => Result<B, E2>): Result<B, E | E2>;
@@ -754,7 +760,13 @@ const andThen: {
 });
 
 const tryRecoverAsync: {
-  <A, E, E2>(result: Result<A, E>, fn: (e: E) => Promise<Result<A, E2>>): Promise<Result<A, E2>>;
+  <A, E, E2>(
+    result: Result<A, E>,
+    fn: (e: E) => Promise<Result<NoInfer<A>, E2>>,
+  ): Promise<Result<A, E2>>;
+  <E, E2>(
+    fn: (e: E) => Promise<Result<never, E2>>,
+  ): <A>(result: Result<A, E>) => Promise<Result<A, E2>>;
   <E, A, E2>(
     fn: (e: E) => Promise<Result<A, E2>>,
   ): (result: Result<A, E>) => Promise<Result<A, E2>>;
@@ -762,7 +774,7 @@ const tryRecoverAsync: {
   2,
   <A, E, E2>(
     result: Result<A, E>,
-    fn: (e: E) => Promise<Result<A, E2>>,
+    fn: (e: E) => Promise<Result<NoInfer<A>, E2>>,
   ): Promise<Result<A, E2>> => {
     return result.tryRecoverAsync(fn);
   },
@@ -787,9 +799,9 @@ const andThenAsync: {
 );
 
 const match: {
-  <A, E, T>(result: Result<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T }): T;
-  <A, E, T>(handlers: { ok: (a: A) => T; err: (e: E) => T }): (result: Result<A, E>) => T;
-} = dual(2, <A, E, T>(result: Result<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T }): T => {
+  <A, E, T>(result: Result<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T; }): T;
+  <A, E, T>(handlers: { ok: (a: A) => T; err: (e: E) => T; }): (result: Result<A, E>) => T;
+} = dual(2, <A, E, T>(result: Result<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T; }): T => {
   return result.match(handlers);
 });
 
@@ -854,7 +866,7 @@ function assertIsResult(value: unknown): asserts value is Result<unknown, unknow
   }
   return panic(
     "Result.gen body must return Result.ok() or Result.err(), got: " +
-      (value === null ? "null" : typeof value === "object" ? JSON.stringify(value) : String(value)),
+    (value === null ? "null" : typeof value === "object" ? JSON.stringify(value) : String(value)),
   );
 }
 
@@ -1146,8 +1158,8 @@ export const Result = {
    * Attempts to recover from an error into the same success type.
    *
    * @example
-   * Result.tryRecover(err("fail"), e => ok(e.length)) // Ok(4)
-   * Result.tryRecover(e => ok(e.length))(err("fail")) // Ok(4)
+   * Result.tryRecover(err<number, string>("fail"), e => ok(e.length)) // Ok(4)
+   * Result.tryRecover((e: string) => ok(e.length))(err<number, string>("fail")) // Ok(4)
    */
   tryRecover,
   /**
@@ -1161,8 +1173,8 @@ export const Result = {
    * Attempts to recover from an error into the same success type asynchronously.
    *
    * @example
-   * await Result.tryRecoverAsync(err("fail"), async e => ok(e.length)) // Ok(4)
-   * await Result.tryRecoverAsync(async e => ok(e.length))(err("fail")) // Ok(4)
+   * await Result.tryRecoverAsync(err<number, string>("fail"), async e => ok(e.length)) // Ok(4)
+   * await Result.tryRecoverAsync(async (e: string) => ok(e.length))(err<number, string>("fail")) // Ok(4)
    */
   tryRecoverAsync,
   /**
