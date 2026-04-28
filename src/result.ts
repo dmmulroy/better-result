@@ -11,7 +11,6 @@ import {
   type AnyResult,
   type InferErr,
   type InferOk,
-  type Result as ResultType,
   type TapBothAsyncHandlers,
   type TapBothHandlers,
 } from "./core";
@@ -41,45 +40,45 @@ type NoInfer<T> = [T][T extends unknown ? 0 : never];
 const tryFn: {
   <A>(
     thunk: () => Awaited<A>,
-    config?: { retry?: { times: number } },
-  ): ResultType<A, UnhandledException>;
+    config?: { retry?: { times: number; }; },
+  ): Result<A, UnhandledException>;
   <A, E>(
-    options: { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E> },
-    config?: { retry?: { times: number } },
-  ): ResultType<A, E>;
+    options: { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E>; },
+    config?: { retry?: { times: number; }; },
+  ): Result<A, E>;
 } = <A, E>(
-  options: (() => Awaited<A>) | { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E> },
-  config?: { retry?: { times: number } },
-): ResultType<A, E | UnhandledException> => {
-  const execute = (): ResultType<A, E | UnhandledException> => {
-    if (typeof options === "function") {
-      try {
-        return ok(options());
-      } catch (cause) {
-        return err(new UnhandledException({ cause }));
+  options: (() => Awaited<A>) | { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E>; },
+  config?: { retry?: { times: number; }; },
+): Result<A, E | UnhandledException> => {
+    const execute = (): Result<A, E | UnhandledException> => {
+      if (typeof options === "function") {
+        try {
+          return ok(options());
+        } catch (cause) {
+          return err(new UnhandledException({ cause }));
+        }
       }
-    }
-    try {
-      return ok(options.try());
-    } catch (originalCause) {
-      // If the user's catch handler throws, it's a defect — Panic
       try {
-        return err(options.catch(originalCause));
-      } catch (catchHandlerError) {
-        throw panic("Result.try catch handler threw", catchHandlerError);
+        return ok(options.try());
+      } catch (originalCause) {
+        // If the user's catch handler throws, it's a defect — Panic
+        try {
+          return err(options.catch(originalCause));
+        } catch (catchHandlerError) {
+          throw panic("Result.try catch handler threw", catchHandlerError);
+        }
       }
+    };
+
+    const times = config?.retry?.times ?? 0;
+    let result = execute();
+
+    for (let retry = 0; retry < times && result.status === "error"; retry++) {
+      result = execute();
     }
+
+    return result;
   };
-
-  const times = config?.retry?.times ?? 0;
-  let result = execute();
-
-  for (let retry = 0; retry < times && result.status === "error"; retry++) {
-    result = execute();
-  }
-
-  return result;
-};
 
 type RetryConfig<E = unknown> = {
   retry?: {
@@ -95,226 +94,226 @@ const tryPromise: {
   <A>(
     thunk: () => Promise<A>,
     config?: RetryConfig<UnhandledException>,
-  ): Promise<ResultType<A, UnhandledException>>;
+  ): Promise<Result<A, UnhandledException>>;
   <A, E>(
-    options: { try: () => Promise<A>; catch: (cause: unknown) => E | Promise<E> },
+    options: { try: () => Promise<A>; catch: (cause: unknown) => E | Promise<E>; },
     config?: RetryConfig<E>,
-  ): Promise<ResultType<A, E>>;
+  ): Promise<Result<A, E>>;
 } = async <A, E>(
   options:
     | (() => Promise<A>)
-    | { try: () => Promise<A>; catch: (cause: unknown) => E | Promise<E> },
+    | { try: () => Promise<A>; catch: (cause: unknown) => E | Promise<E>; },
   config?: RetryConfig<E | UnhandledException>,
-): Promise<ResultType<A, E | UnhandledException>> => {
-  const execute = async (): Promise<ResultType<A, E | UnhandledException>> => {
-    if (typeof options === "function") {
-      try {
-        return ok(await options());
-      } catch (cause) {
-        return err(new UnhandledException({ cause }));
+): Promise<Result<A, E | UnhandledException>> => {
+    const execute = async (): Promise<Result<A, E | UnhandledException>> => {
+      if (typeof options === "function") {
+        try {
+          return ok(await options());
+        } catch (cause) {
+          return err(new UnhandledException({ cause }));
+        }
       }
-    }
-    try {
-      return ok(await options.try());
-    } catch (originalCause) {
-      // If the user's catch handler throws, it's a defect — Panic
       try {
-        return err(await options.catch(originalCause));
-      } catch (catchHandlerError) {
-        throw panic("Result.tryPromise catch handler threw", catchHandlerError);
+        return ok(await options.try());
+      } catch (originalCause) {
+        // If the user's catch handler throws, it's a defect — Panic
+        try {
+          return err(await options.catch(originalCause));
+        } catch (catchHandlerError) {
+          throw panic("Result.tryPromise catch handler threw", catchHandlerError);
+        }
       }
+    };
+
+    const retry = config?.retry;
+
+    if (!retry) {
+      return execute();
     }
-  };
 
-  const retry = config?.retry;
+    const getDelay = (retryAttempt: number): number => {
+      switch (retry.backoff) {
+        case "constant":
+          return retry.delayMs;
+        case "linear":
+          return retry.delayMs * (retryAttempt + 1);
+        case "exponential":
+          return retry.delayMs * 2 ** retryAttempt;
+      }
+    };
 
-  if (!retry) {
-    return execute();
-  }
+    const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-  const getDelay = (retryAttempt: number): number => {
-    switch (retry.backoff) {
-      case "constant":
-        return retry.delayMs;
-      case "linear":
-        return retry.delayMs * (retryAttempt + 1);
-      case "exponential":
-        return retry.delayMs * 2 ** retryAttempt;
+    let result = await execute();
+
+    const shouldRetryFn = retry.shouldRetry ?? (() => true);
+
+    for (let attempt = 0; attempt < retry.times; attempt++) {
+      if (result.status !== "error") break;
+      const error = result.error;
+      const shouldContinue = tryOrPanic(() => shouldRetryFn(error), "shouldRetry predicate threw");
+      if (!shouldContinue) break;
+      await sleep(getDelay(attempt));
+      result = await execute();
     }
+
+    return result;
   };
-
-  const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-  let result = await execute();
-
-  const shouldRetryFn = retry.shouldRetry ?? (() => true);
-
-  for (let attempt = 0; attempt < retry.times; attempt++) {
-    if (result.status !== "error") break;
-    const error = result.error;
-    const shouldContinue = tryOrPanic(() => shouldRetryFn(error), "shouldRetry predicate threw");
-    if (!shouldContinue) break;
-    await sleep(getDelay(attempt));
-    result = await execute();
-  }
-
-  return result;
-};
 
 const map: {
-  <A, B, E>(result: ResultType<A, E>, fn: (a: A) => B): ResultType<B, E>;
-  <A, B>(fn: (a: A) => B): <E>(result: ResultType<A, E>) => ResultType<B, E>;
-} = dual(2, <A, B, E>(result: ResultType<A, E>, fn: (a: A) => B): ResultType<B, E> => {
+  <A, B, E>(result: Result<A, E>, fn: (a: A) => B): Result<B, E>;
+  <A, B>(fn: (a: A) => B): <E>(result: Result<A, E>) => Result<B, E>;
+} = dual(2, <A, B, E>(result: Result<A, E>, fn: (a: A) => B): Result<B, E> => {
   return result.map(fn);
 });
 
 const mapError: {
-  <A, E, E2>(result: ResultType<A, E>, fn: (e: E) => E2): ResultType<A, E2>;
-  <E, E2>(fn: (e: E) => E2): <A>(result: ResultType<A, E>) => ResultType<A, E2>;
-} = dual(2, <A, E, E2>(result: ResultType<A, E>, fn: (e: E) => E2): ResultType<A, E2> => {
+  <A, E, E2>(result: Result<A, E>, fn: (e: E) => E2): Result<A, E2>;
+  <E, E2>(fn: (e: E) => E2): <A>(result: Result<A, E>) => Result<A, E2>;
+} = dual(2, <A, E, E2>(result: Result<A, E>, fn: (e: E) => E2): Result<A, E2> => {
   return result.mapError(fn);
 });
 
 const tryRecover: {
-  <A, E, E2>(result: ResultType<A, E>, fn: (e: E) => ResultType<NoInfer<A>, E2>): ResultType<A, E2>;
-  <E, E2>(fn: (e: E) => ResultType<never, E2>): <A>(result: ResultType<A, E>) => ResultType<A, E2>;
-  <E, A, E2>(fn: (e: E) => ResultType<A, E2>): (result: ResultType<A, E>) => ResultType<A, E2>;
+  <A, E, E2>(result: Result<A, E>, fn: (e: E) => Result<NoInfer<A>, E2>): Result<A, E2>;
+  <E, E2>(fn: (e: E) => Result<never, E2>): <A>(result: Result<A, E>) => Result<A, E2>;
+  <E, A, E2>(fn: (e: E) => Result<A, E2>): (result: Result<A, E>) => Result<A, E2>;
 } = dual(
   2,
   <A, E, E2>(
-    result: ResultType<A, E>,
-    fn: (e: E) => ResultType<NoInfer<A>, E2>,
-  ): ResultType<A, E2> => {
+    result: Result<A, E>,
+    fn: (e: E) => Result<NoInfer<A>, E2>,
+  ): Result<A, E2> => {
     return result.tryRecover(fn);
   },
 );
 
 const andThen: {
-  <A, B, E, E2>(result: ResultType<A, E>, fn: (a: A) => ResultType<B, E2>): ResultType<B, E | E2>;
+  <A, B, E, E2>(result: Result<A, E>, fn: (a: A) => Result<B, E2>): Result<B, E | E2>;
   <A, B, E2>(
-    fn: (a: A) => ResultType<B, E2>,
-  ): <E>(result: ResultType<A, E>) => ResultType<B, E | E2>;
+    fn: (a: A) => Result<B, E2>,
+  ): <E>(result: Result<A, E>) => Result<B, E | E2>;
 } = dual(
   2,
   <A, B, E, E2>(
-    result: ResultType<A, E>,
-    fn: (a: A) => ResultType<B, E2>,
-  ): ResultType<B, E | E2> => {
+    result: Result<A, E>,
+    fn: (a: A) => Result<B, E2>,
+  ): Result<B, E | E2> => {
     return result.andThen(fn);
   },
 );
 
 const tryRecoverAsync: {
   <A, E, E2>(
-    result: ResultType<A, E>,
-    fn: (e: E) => Promise<ResultType<NoInfer<A>, E2>>,
-  ): Promise<ResultType<A, E2>>;
+    result: Result<A, E>,
+    fn: (e: E) => Promise<Result<NoInfer<A>, E2>>,
+  ): Promise<Result<A, E2>>;
   <E, E2>(
-    fn: (e: E) => Promise<ResultType<never, E2>>,
-  ): <A>(result: ResultType<A, E>) => Promise<ResultType<A, E2>>;
+    fn: (e: E) => Promise<Result<never, E2>>,
+  ): <A>(result: Result<A, E>) => Promise<Result<A, E2>>;
   <E, A, E2>(
-    fn: (e: E) => Promise<ResultType<A, E2>>,
-  ): (result: ResultType<A, E>) => Promise<ResultType<A, E2>>;
+    fn: (e: E) => Promise<Result<A, E2>>,
+  ): (result: Result<A, E>) => Promise<Result<A, E2>>;
 } = dual(
   2,
   <A, E, E2>(
-    result: ResultType<A, E>,
-    fn: (e: E) => Promise<ResultType<NoInfer<A>, E2>>,
-  ): Promise<ResultType<A, E2>> => {
+    result: Result<A, E>,
+    fn: (e: E) => Promise<Result<NoInfer<A>, E2>>,
+  ): Promise<Result<A, E2>> => {
     return result.tryRecoverAsync(fn);
   },
 );
 
 const andThenAsync: {
   <A, B, E, E2>(
-    result: ResultType<A, E>,
-    fn: (a: A) => Promise<ResultType<B, E2>>,
-  ): Promise<ResultType<B, E | E2>>;
+    result: Result<A, E>,
+    fn: (a: A) => Promise<Result<B, E2>>,
+  ): Promise<Result<B, E | E2>>;
   <A, B, E2>(
-    fn: (a: A) => Promise<ResultType<B, E2>>,
-  ): <E>(result: ResultType<A, E>) => Promise<ResultType<B, E | E2>>;
+    fn: (a: A) => Promise<Result<B, E2>>,
+  ): <E>(result: Result<A, E>) => Promise<Result<B, E | E2>>;
 } = dual(
   2,
   <A, B, E, E2>(
-    result: ResultType<A, E>,
-    fn: (a: A) => Promise<ResultType<B, E2>>,
-  ): Promise<ResultType<B, E | E2>> => {
+    result: Result<A, E>,
+    fn: (a: A) => Promise<Result<B, E2>>,
+  ): Promise<Result<B, E | E2>> => {
     return result.andThenAsync(fn);
   },
 );
 
 const match: {
-  <A, E, T>(result: ResultType<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T }): T;
-  <A, E, T>(handlers: { ok: (a: A) => T; err: (e: E) => T }): (result: ResultType<A, E>) => T;
+  <A, E, T>(result: Result<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T; }): T;
+  <A, E, T>(handlers: { ok: (a: A) => T; err: (e: E) => T; }): (result: Result<A, E>) => T;
 } = dual(
   2,
-  <A, E, T>(result: ResultType<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T }): T => {
+  <A, E, T>(result: Result<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T; }): T => {
     return result.match(handlers);
   },
 );
 
 const tap: {
-  <A, E>(result: ResultType<A, E>, fn: (a: A) => void): ResultType<A, E>;
-  <A>(fn: (a: A) => void): <E>(result: ResultType<A, E>) => ResultType<A, E>;
-} = dual(2, <A, E>(result: ResultType<A, E>, fn: (a: A) => void): ResultType<A, E> => {
+  <A, E>(result: Result<A, E>, fn: (a: A) => void): Result<A, E>;
+  <A>(fn: (a: A) => void): <E>(result: Result<A, E>) => Result<A, E>;
+} = dual(2, <A, E>(result: Result<A, E>, fn: (a: A) => void): Result<A, E> => {
   return result.tap(fn);
 });
 
 const tapAsync: {
-  <A, E>(result: ResultType<A, E>, fn: (a: A) => Promise<void>): Promise<ResultType<A, E>>;
-  <A>(fn: (a: A) => Promise<void>): <E>(result: ResultType<A, E>) => Promise<ResultType<A, E>>;
+  <A, E>(result: Result<A, E>, fn: (a: A) => Promise<void>): Promise<Result<A, E>>;
+  <A>(fn: (a: A) => Promise<void>): <E>(result: Result<A, E>) => Promise<Result<A, E>>;
 } = dual(
   2,
-  <A, E>(result: ResultType<A, E>, fn: (a: A) => Promise<void>): Promise<ResultType<A, E>> => {
+  <A, E>(result: Result<A, E>, fn: (a: A) => Promise<void>): Promise<Result<A, E>> => {
     return result.tapAsync(fn);
   },
 );
 
 const tapError: {
-  <A, E>(result: ResultType<A, E>, fn: (e: E) => void): ResultType<A, E>;
-  <E>(fn: (e: E) => void): <A>(result: ResultType<A, E>) => ResultType<A, E>;
-} = dual(2, <A, E>(result: ResultType<A, E>, fn: (e: E) => void): ResultType<A, E> => {
+  <A, E>(result: Result<A, E>, fn: (e: E) => void): Result<A, E>;
+  <E>(fn: (e: E) => void): <A>(result: Result<A, E>) => Result<A, E>;
+} = dual(2, <A, E>(result: Result<A, E>, fn: (e: E) => void): Result<A, E> => {
   return result.tapError(fn);
 });
 
 const tapErrorAsync: {
-  <A, E>(result: ResultType<A, E>, fn: (e: E) => Promise<void>): Promise<ResultType<A, E>>;
-  <E>(fn: (e: E) => Promise<void>): <A>(result: ResultType<A, E>) => Promise<ResultType<A, E>>;
+  <A, E>(result: Result<A, E>, fn: (e: E) => Promise<void>): Promise<Result<A, E>>;
+  <E>(fn: (e: E) => Promise<void>): <A>(result: Result<A, E>) => Promise<Result<A, E>>;
 } = dual(
   2,
-  <A, E>(result: ResultType<A, E>, fn: (e: E) => Promise<void>): Promise<ResultType<A, E>> => {
+  <A, E>(result: Result<A, E>, fn: (e: E) => Promise<void>): Promise<Result<A, E>> => {
     return result.tapErrorAsync(fn);
   },
 );
 
 const tapBoth: {
-  <A, E>(result: ResultType<A, E>, handlers: TapBothHandlers<A, E>): ResultType<A, E>;
-  <A, E>(handlers: TapBothHandlers<A, E>): (result: ResultType<A, E>) => ResultType<A, E>;
-} = dual(2, <A, E>(result: ResultType<A, E>, handlers: TapBothHandlers<A, E>): ResultType<A, E> => {
+  <A, E>(result: Result<A, E>, handlers: TapBothHandlers<A, E>): Result<A, E>;
+  <A, E>(handlers: TapBothHandlers<A, E>): (result: Result<A, E>) => Result<A, E>;
+} = dual(2, <A, E>(result: Result<A, E>, handlers: TapBothHandlers<A, E>): Result<A, E> => {
   return result.tapBoth(handlers);
 });
 
 const tapBothAsync: {
-  <A, E>(result: ResultType<A, E>, handlers: TapBothAsyncHandlers<A, E>): Promise<ResultType<A, E>>;
+  <A, E>(result: Result<A, E>, handlers: TapBothAsyncHandlers<A, E>): Promise<Result<A, E>>;
   <A, E>(
     handlers: TapBothAsyncHandlers<A, E>,
-  ): (result: ResultType<A, E>) => Promise<ResultType<A, E>>;
+  ): (result: Result<A, E>) => Promise<Result<A, E>>;
 } = dual(
   2,
   <A, E>(
-    result: ResultType<A, E>,
+    result: Result<A, E>,
     handlers: TapBothAsyncHandlers<A, E>,
-  ): Promise<ResultType<A, E>> => {
+  ): Promise<Result<A, E>> => {
     return result.tapBothAsync(handlers);
   },
 );
 
-const unwrap = <A, E>(result: ResultType<A, E>, message?: string): A => {
+const unwrap = <A, E>(result: Result<A, E>, message?: string): A => {
   return result.unwrap(message);
 };
 
 /** Validates that a value is a Result instance. Throws with helpful message if not. */
-function assertIsResult(value: unknown): asserts value is ResultType<unknown, unknown> {
+function assertIsResult(value: unknown): asserts value is Result<unknown, unknown> {
   if (
     value !== null &&
     typeof value === "object" &&
@@ -325,32 +324,32 @@ function assertIsResult(value: unknown): asserts value is ResultType<unknown, un
   }
   return panic(
     "Result.gen body must return Result.ok() or Result.err(), got: " +
-      (value === null ? "null" : typeof value === "object" ? JSON.stringify(value) : String(value)),
+    (value === null ? "null" : typeof value === "object" ? JSON.stringify(value) : String(value)),
   );
 }
 
 const unwrapOr: {
-  <A, E, B>(result: ResultType<A, E>, fallback: B): A | B;
-  <B>(fallback: B): <A, E>(result: ResultType<A, E>) => A | B;
-} = dual(2, <A, E, B>(result: ResultType<A, E>, fallback: B): A | B => {
+  <A, E, B>(result: Result<A, E>, fallback: B): A | B;
+  <B>(fallback: B): <A, E>(result: Result<A, E>) => A | B;
+} = dual(2, <A, E, B>(result: Result<A, E>, fallback: B): A | B => {
   return result.unwrapOr(fallback);
 });
 
 const gen: {
   <Yield extends Err<never, unknown>, R extends AnyResult>(
     body: () => Generator<Yield, R, unknown>,
-  ): ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
+  ): Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
   <Yield extends Err<never, unknown>, R extends AnyResult, This>(
     body: (this: This) => Generator<Yield, R, unknown>,
     thisArg: This,
-  ): ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
+  ): Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
   <Yield extends Err<never, unknown>, R extends AnyResult>(
     body: () => AsyncGenerator<Yield, R, unknown>,
-  ): Promise<ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
+  ): Promise<Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
   <Yield extends Err<never, unknown>, R extends AnyResult, This>(
     body: (this: This) => AsyncGenerator<Yield, R, unknown>,
     thisArg: This,
-  ): Promise<ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
+  ): Promise<Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
 } = (<Yield extends Err<never, unknown>, R extends AnyResult, This>(
   body:
     | (() => Generator<Yield, R, unknown>)
@@ -359,8 +358,8 @@ const gen: {
     | ((this: This) => AsyncGenerator<Yield, R, unknown>),
   thisArg?: This,
 ):
-  | ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>
-  | Promise<ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>> => {
+  | Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>
+  | Promise<Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>> => {
   // SAFETY: body.call binds thisArg; cast needed due to union of function signatures
   const iterator = (body as (this: This) => Generator<Yield, R, unknown>).call(thisArg as This);
 
@@ -390,7 +389,7 @@ const gen: {
         }
       }
 
-      return state.value as ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
+      return state.value as Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
     })();
   }
 
@@ -418,26 +417,26 @@ const gen: {
     }
   }
 
-  return state.value as ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
+  return state.value as Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
 }) as {
   <Yield extends Err<never, unknown>, R extends AnyResult>(
     body: () => Generator<Yield, R, unknown>,
-  ): ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
+  ): Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
   <Yield extends Err<never, unknown>, R extends AnyResult, This>(
     body: (this: This) => Generator<Yield, R, unknown>,
     thisArg: This,
-  ): ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
+  ): Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>;
   <Yield extends Err<never, unknown>, R extends AnyResult>(
     body: () => AsyncGenerator<Yield, R, unknown>,
-  ): Promise<ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
+  ): Promise<Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
   <Yield extends Err<never, unknown>, R extends AnyResult, This>(
     body: (this: This) => AsyncGenerator<Yield, R, unknown>,
     thisArg: This,
-  ): Promise<ResultType<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
+  ): Promise<Result<InferOk<R>, InferYieldErr<Yield> | InferErr<R>>>;
 };
 
 async function* resultAwait<T, E>(
-  promise: Promise<ResultType<T, E>>,
+  promise: Promise<Result<T, E>>,
 ): AsyncGenerator<Err<never, E>, T, unknown> {
   const result = await promise;
   return yield* result;
@@ -467,17 +466,17 @@ function isSerializedResult(obj: unknown): obj is SerializedResult<unknown, unkn
   );
 }
 
-const serialize = <T, E>(result: ResultType<T, E>): SerializedResult<T, E> => {
+const serialize = <T, E>(result: Result<T, E>): SerializedResult<T, E> => {
   return result.status === "ok"
     ? { status: "ok", value: result.value }
     : { status: "error", error: result.error };
 };
 
-const deserialize = <T, E>(value: unknown): ResultType<T, E | ResultDeserializationError> => {
+const deserialize = <T, E>(value: unknown): Result<T, E | ResultDeserializationError> => {
   if (isSerializedResult(value)) {
     return value.status === "ok"
-      ? (new Ok(value.value) as ResultType<T, E>)
-      : (new Err(value.error) as ResultType<T, E>);
+      ? (new Ok(value.value) as Result<T, E>)
+      : (new Err(value.error) as Result<T, E>);
   }
   return err(new ResultDeserializationError({ value }));
 };
@@ -485,11 +484,11 @@ const deserialize = <T, E>(value: unknown): ResultType<T, E | ResultDeserializat
 /**
  * @deprecated Use `Result.deserialize` instead. Will be removed in 3.0.
  */
-const hydrate = <T, E>(value: unknown): ResultType<T, E | ResultDeserializationError> => {
+const hydrate = <T, E>(value: unknown): Result<T, E | ResultDeserializationError> => {
   return deserialize(value);
 };
 
-const partition = <T, E>(results: readonly ResultType<T, E>[]): [T[], E[]] => {
+const partition = <T, E>(results: readonly Result<T, E>[]): [T[], E[]] => {
   const oks: T[] = [];
   const errs: E[] = [];
   for (const r of results) {
@@ -506,10 +505,10 @@ const partition = <T, E>(results: readonly ResultType<T, E>[]): [T[], E[]] => {
  * Flattens nested Result into single Result.
  *
  * @example
- * const nested: ResultType<ResultType<number, E1>, E2> = Result.ok(Result.ok(42));
- * const flat: ResultType<number, E1 | E2> = Result.flatten(nested); // Ok(42)
+ * const nested: Result<Result<number, E1>, E2> = Result.ok(Result.ok(42));
+ * const flat: Result<number, E1 | E2> = Result.flatten(nested); // Ok(42)
  */
-const flatten = <T, E, E2>(result: ResultType<ResultType<T, E>, E2>): ResultType<T, E | E2> => {
+const flatten = <T, E, E2>(result: Result<Result<T, E>, E2>): Result<T, E | E2> => {
   if (result.status === "ok") {
     return result.value;
   }
@@ -722,7 +721,7 @@ export const Result = {
    *   const b = yield* getB(a); // Err: ErrorB
    *   return Result.ok({ a, b });
    * });
-   * // ResultType<{a, b}, ErrorA | ErrorB>
+   * // Result<{a, b}, ErrorA | ErrorB>
    *
    * @example
    * // Normalize error types with mapError
@@ -731,7 +730,7 @@ export const Result = {
    *   const b = yield* getB(a);
    *   return Result.ok({ a, b });
    * }).mapError(e => new UnifiedError(e._tag, e.message));
-   * // ResultType<{a, b}, UnifiedError>
+   * // Result<{a, b}, UnifiedError>
    *
    * @example
    * // Async with Result.await
