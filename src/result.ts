@@ -36,6 +36,8 @@ const tryOrPanic = <T>(fn: () => T, message: string): T => {
  */
 type InferYieldErr<Y> = Y extends Err<never, infer E> ? E : never;
 
+type NoInfer<T> = [T][T extends unknown ? 0 : never];
+
 const tryFn: {
   <A>(
     thunk: () => Awaited<A>,
@@ -174,11 +176,15 @@ const mapError: {
 });
 
 const tryRecover: {
-  <A, E, E2>(result: ResultType<A, E>, fn: (e: E) => ResultType<A, E2>): ResultType<A, E2>;
+  <A, E, E2>(result: ResultType<A, E>, fn: (e: E) => ResultType<NoInfer<A>, E2>): ResultType<A, E2>;
+  <E, E2>(fn: (e: E) => ResultType<never, E2>): <A>(result: ResultType<A, E>) => ResultType<A, E2>;
   <E, A, E2>(fn: (e: E) => ResultType<A, E2>): (result: ResultType<A, E>) => ResultType<A, E2>;
 } = dual(
   2,
-  <A, E, E2>(result: ResultType<A, E>, fn: (e: E) => ResultType<A, E2>): ResultType<A, E2> => {
+  <A, E, E2>(
+    result: ResultType<A, E>,
+    fn: (e: E) => ResultType<NoInfer<A>, E2>,
+  ): ResultType<A, E2> => {
     return result.tryRecover(fn);
   },
 );
@@ -201,8 +207,11 @@ const andThen: {
 const tryRecoverAsync: {
   <A, E, E2>(
     result: ResultType<A, E>,
-    fn: (e: E) => Promise<ResultType<A, E2>>,
+    fn: (e: E) => Promise<ResultType<NoInfer<A>, E2>>,
   ): Promise<ResultType<A, E2>>;
+  <E, E2>(
+    fn: (e: E) => Promise<ResultType<never, E2>>,
+  ): <A>(result: ResultType<A, E>) => Promise<ResultType<A, E2>>;
   <E, A, E2>(
     fn: (e: E) => Promise<ResultType<A, E2>>,
   ): (result: ResultType<A, E>) => Promise<ResultType<A, E2>>;
@@ -210,7 +219,7 @@ const tryRecoverAsync: {
   2,
   <A, E, E2>(
     result: ResultType<A, E>,
-    fn: (e: E) => Promise<ResultType<A, E2>>,
+    fn: (e: E) => Promise<ResultType<NoInfer<A>, E2>>,
   ): Promise<ResultType<A, E2>> => {
     return result.tryRecoverAsync(fn);
   },
