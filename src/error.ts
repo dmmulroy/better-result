@@ -8,6 +8,9 @@ const serializeCause = (cause: unknown): unknown => {
   return cause;
 };
 
+/** Prevents inference from a type position while supporting TypeScript 5.0. */
+type noinfer<T> = [T][T extends unknown ? 0 : never];
+
 /** Any tagged error (for generic constraints) */
 type AnyTaggedError = Error & { readonly _tag: string };
 
@@ -153,7 +156,7 @@ export const matchErrorPartial: {
   <E extends AnyTaggedError, R, const H extends PartialMatchHandlers<E, R>>(
     err: E,
     handlers: H,
-    fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>> }>) => R,
+    fallback: (e: Exclude<E, { _tag: noinfer<HandledTags<E, H>> }>) => R,
   ): R;
   <
     E extends AnyTaggedError,
@@ -161,7 +164,7 @@ export const matchErrorPartial: {
     const H extends PartialMatchHandlers<E, R> = PartialMatchHandlers<E, R>,
   >(
     handlers: H,
-    fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>> }>) => R,
+    fallback: (e: Exclude<E, { _tag: noinfer<HandledTags<E, H>> }>) => R,
   ): (err: E) => R;
 } = dual(
   3,
