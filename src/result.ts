@@ -39,46 +39,46 @@ type NoInfer<T> = [T][T extends unknown ? 0 : never];
 
 const tryFn: {
   <A, E>(
-    options: { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E>; },
-    config?: { retry?: { times: number; }; },
+    options: { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E> },
+    config?: { retry?: { times: number } },
   ): Result<A, E>;
   <A>(
     thunk: () => Awaited<A>,
-    config?: { retry?: { times: number; }; },
+    config?: { retry?: { times: number } },
   ): Result<A, UnhandledException>;
 } = <A, E>(
-  options: (() => Awaited<A>) | { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E>; },
-  config?: { retry?: { times: number; }; },
+  options: (() => Awaited<A>) | { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E> },
+  config?: { retry?: { times: number } },
 ): Result<A, E | UnhandledException> => {
-    const execute = (): Result<A, E | UnhandledException> => {
-      if (typeof options === "function") {
-        try {
-          return ok(options());
-        } catch (cause) {
-          return err(new UnhandledException({ cause }));
-        }
-      }
+  const execute = (): Result<A, E | UnhandledException> => {
+    if (typeof options === "function") {
       try {
-        return ok(options.try());
-      } catch (originalCause) {
-        // If the user's catch handler throws, it's a defect — Panic
-        try {
-          return err(options.catch(originalCause));
-        } catch (catchHandlerError) {
-          throw panic("Result.try catch handler threw", catchHandlerError);
-        }
+        return ok(options());
+      } catch (cause) {
+        return err(new UnhandledException({ cause }));
       }
-    };
-
-    const times = config?.retry?.times ?? 0;
-    let result = execute();
-
-    for (let retry = 0; retry < times && result.status === "error"; retry++) {
-      result = execute();
     }
-
-    return result;
+    try {
+      return ok(options.try());
+    } catch (originalCause) {
+      // If the user's catch handler throws, it's a defect — Panic
+      try {
+        return err(options.catch(originalCause));
+      } catch (catchHandlerError) {
+        throw panic("Result.try catch handler threw", catchHandlerError);
+      }
+    }
   };
+
+  const times = config?.retry?.times ?? 0;
+  let result = execute();
+
+  for (let retry = 0; retry < times && result.status === "error"; retry++) {
+    result = execute();
+  }
+
+  return result;
+};
 
 type RetryConfig<E = unknown> = {
   retry?: {
@@ -92,7 +92,7 @@ type RetryConfig<E = unknown> = {
 
 const tryPromise: {
   <A, E>(
-    options: { try: () => Promise<A>; catch: (cause: unknown) => E | Promise<E>; },
+    options: { try: () => Promise<A>; catch: (cause: unknown) => E | Promise<E> },
     config?: RetryConfig<E>,
   ): Promise<Result<A, E>>;
   <A>(
@@ -102,63 +102,63 @@ const tryPromise: {
 } = async <A, E>(
   options:
     | (() => Promise<A>)
-    | { try: () => Promise<A>; catch: (cause: unknown) => E | Promise<E>; },
+    | { try: () => Promise<A>; catch: (cause: unknown) => E | Promise<E> },
   config?: RetryConfig<E | UnhandledException>,
 ): Promise<Result<A, E | UnhandledException>> => {
-    const execute = async (): Promise<Result<A, E | UnhandledException>> => {
-      if (typeof options === "function") {
-        try {
-          return ok(await options());
-        } catch (cause) {
-          return err(new UnhandledException({ cause }));
-        }
-      }
+  const execute = async (): Promise<Result<A, E | UnhandledException>> => {
+    if (typeof options === "function") {
       try {
-        return ok(await options.try());
-      } catch (originalCause) {
-        // If the user's catch handler throws, it's a defect — Panic
-        try {
-          return err(await options.catch(originalCause));
-        } catch (catchHandlerError) {
-          throw panic("Result.tryPromise catch handler threw", catchHandlerError);
-        }
+        return ok(await options());
+      } catch (cause) {
+        return err(new UnhandledException({ cause }));
       }
-    };
-
-    const retry = config?.retry;
-
-    if (!retry) {
-      return execute();
     }
-
-    const getDelay = (retryAttempt: number): number => {
-      switch (retry.backoff) {
-        case "constant":
-          return retry.delayMs;
-        case "linear":
-          return retry.delayMs * (retryAttempt + 1);
-        case "exponential":
-          return retry.delayMs * 2 ** retryAttempt;
+    try {
+      return ok(await options.try());
+    } catch (originalCause) {
+      // If the user's catch handler throws, it's a defect — Panic
+      try {
+        return err(await options.catch(originalCause));
+      } catch (catchHandlerError) {
+        throw panic("Result.tryPromise catch handler threw", catchHandlerError);
       }
-    };
-
-    const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-    let result = await execute();
-
-    const shouldRetryFn = retry.shouldRetry ?? (() => true);
-
-    for (let attempt = 0; attempt < retry.times; attempt++) {
-      if (result.status !== "error") break;
-      const error = result.error;
-      const shouldContinue = tryOrPanic(() => shouldRetryFn(error), "shouldRetry predicate threw");
-      if (!shouldContinue) break;
-      await sleep(getDelay(attempt));
-      result = await execute();
     }
-
-    return result;
   };
+
+  const retry = config?.retry;
+
+  if (!retry) {
+    return execute();
+  }
+
+  const getDelay = (retryAttempt: number): number => {
+    switch (retry.backoff) {
+      case "constant":
+        return retry.delayMs;
+      case "linear":
+        return retry.delayMs * (retryAttempt + 1);
+      case "exponential":
+        return retry.delayMs * 2 ** retryAttempt;
+    }
+  };
+
+  const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  let result = await execute();
+
+  const shouldRetryFn = retry.shouldRetry ?? (() => true);
+
+  for (let attempt = 0; attempt < retry.times; attempt++) {
+    if (result.status !== "error") break;
+    const error = result.error;
+    const shouldContinue = tryOrPanic(() => shouldRetryFn(error), "shouldRetry predicate threw");
+    if (!shouldContinue) break;
+    await sleep(getDelay(attempt));
+    result = await execute();
+  }
+
+  return result;
+};
 
 const map: {
   <A, B, E>(result: Result<A, E>, fn: (a: A) => B): Result<B, E>;
@@ -180,28 +180,17 @@ const tryRecover: {
   <E, A, E2>(fn: (e: E) => Result<A, E2>): (result: Result<A, E>) => Result<A, E2>;
 } = dual(
   2,
-  <A, E, E2>(
-    result: Result<A, E>,
-    fn: (e: E) => Result<NoInfer<A>, E2>,
-  ): Result<A, E2> => {
+  <A, E, E2>(result: Result<A, E>, fn: (e: E) => Result<NoInfer<A>, E2>): Result<A, E2> => {
     return result.tryRecover(fn);
   },
 );
 
 const andThen: {
   <A, B, E, E2>(result: Result<A, E>, fn: (a: A) => Result<B, E2>): Result<B, E | E2>;
-  <A, B, E2>(
-    fn: (a: A) => Result<B, E2>,
-  ): <E>(result: Result<A, E>) => Result<B, E | E2>;
-} = dual(
-  2,
-  <A, B, E, E2>(
-    result: Result<A, E>,
-    fn: (a: A) => Result<B, E2>,
-  ): Result<B, E | E2> => {
-    return result.andThen(fn);
-  },
-);
+  <A, B, E2>(fn: (a: A) => Result<B, E2>): <E>(result: Result<A, E>) => Result<B, E | E2>;
+} = dual(2, <A, B, E, E2>(result: Result<A, E>, fn: (a: A) => Result<B, E2>): Result<B, E | E2> => {
+  return result.andThen(fn);
+});
 
 const tryRecoverAsync: {
   <A, E, E2>(
@@ -243,14 +232,11 @@ const andThenAsync: {
 );
 
 const match: {
-  <A, E, T>(handlers: { ok: (a: A) => T; err: (e: E) => T; }): (result: Result<A, E>) => T;
-  <A, E, T>(result: Result<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T; }): T;
-} = dual(
-  2,
-  <A, E, T>(result: Result<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T; }): T => {
-    return result.match(handlers);
-  },
-);
+  <A, E, T>(handlers: { ok: (a: A) => T; err: (e: E) => T }): (result: Result<A, E>) => T;
+  <A, E, T>(result: Result<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T }): T;
+} = dual(2, <A, E, T>(result: Result<A, E>, handlers: { ok: (a: A) => T; err: (e: E) => T }): T => {
+  return result.match(handlers);
+});
 
 const tap: {
   <A, E>(result: Result<A, E>, fn: (a: A) => void): Result<A, E>;
@@ -262,12 +248,9 @@ const tap: {
 const tapAsync: {
   <A, E>(result: Result<A, E>, fn: (a: A) => Promise<void>): Promise<Result<A, E>>;
   <A>(fn: (a: A) => Promise<void>): <E>(result: Result<A, E>) => Promise<Result<A, E>>;
-} = dual(
-  2,
-  <A, E>(result: Result<A, E>, fn: (a: A) => Promise<void>): Promise<Result<A, E>> => {
-    return result.tapAsync(fn);
-  },
-);
+} = dual(2, <A, E>(result: Result<A, E>, fn: (a: A) => Promise<void>): Promise<Result<A, E>> => {
+  return result.tapAsync(fn);
+});
 
 const tapError: {
   <A, E>(result: Result<A, E>, fn: (e: E) => void): Result<A, E>;
@@ -279,12 +262,9 @@ const tapError: {
 const tapErrorAsync: {
   <A, E>(result: Result<A, E>, fn: (e: E) => Promise<void>): Promise<Result<A, E>>;
   <E>(fn: (e: E) => Promise<void>): <A>(result: Result<A, E>) => Promise<Result<A, E>>;
-} = dual(
-  2,
-  <A, E>(result: Result<A, E>, fn: (e: E) => Promise<void>): Promise<Result<A, E>> => {
-    return result.tapErrorAsync(fn);
-  },
-);
+} = dual(2, <A, E>(result: Result<A, E>, fn: (e: E) => Promise<void>): Promise<Result<A, E>> => {
+  return result.tapErrorAsync(fn);
+});
 
 const tapBoth: {
   <A, E>(handlers: TapBothHandlers<A, E>): (result: Result<A, E>) => Result<A, E>;
@@ -294,16 +274,11 @@ const tapBoth: {
 });
 
 const tapBothAsync: {
-  <A, E>(
-    handlers: TapBothAsyncHandlers<A, E>,
-  ): (result: Result<A, E>) => Promise<Result<A, E>>;
+  <A, E>(handlers: TapBothAsyncHandlers<A, E>): (result: Result<A, E>) => Promise<Result<A, E>>;
   <A, E>(result: Result<A, E>, handlers: TapBothAsyncHandlers<A, E>): Promise<Result<A, E>>;
 } = dual(
   2,
-  <A, E>(
-    result: Result<A, E>,
-    handlers: TapBothAsyncHandlers<A, E>,
-  ): Promise<Result<A, E>> => {
+  <A, E>(result: Result<A, E>, handlers: TapBothAsyncHandlers<A, E>): Promise<Result<A, E>> => {
     return result.tapBothAsync(handlers);
   },
 );
@@ -324,7 +299,7 @@ function assertIsResult(value: unknown): asserts value is Result<unknown, unknow
   }
   return panic(
     "Result.gen body must return Result.ok() or Result.err(), got: " +
-    (value === null ? "null" : typeof value === "object" ? JSON.stringify(value) : String(value)),
+      (value === null ? "null" : typeof value === "object" ? JSON.stringify(value) : String(value)),
   );
 }
 
