@@ -414,7 +414,7 @@ Panic also provides `toJSON()` for error reporting services (Sentry, etc.).
 Build exhaustive error handling with discriminated unions:
 
 ```ts
-import { TaggedError, matchError, matchErrorPartial } from "better-result";
+import { Result, TaggedError, matchError, matchErrorPartial } from "better-result";
 
 // Factory API: TaggedError("Tag")<Props>()
 class NotFoundError extends TaggedError("NotFoundError")<{
@@ -448,6 +448,34 @@ matchErrorPartial(
 // Type guards
 TaggedError.is(value); // any tagged error
 NotFoundError.is(value); // specific class
+```
+
+### Yielding Tagged Errors in `Result.gen`
+
+Tagged errors can short-circuit `Result.gen` directly. This is useful for recoverable domain errors and is equivalent to yielding `Result.err(error)`; it does not throw.
+
+```ts
+const result = Result.gen(function* () {
+  yield* new NotFoundError({ id: "123", message: "missing" });
+  return Result.ok("never reached");
+});
+// Result<string, NotFoundError>
+// => Err(original NotFoundError instance)
+```
+
+They also compose with regular `Result` values and contribute to the inferred error union:
+
+```ts
+const result = Result.gen(function* () {
+  const user = yield* findUser("123"); // Result<User, NotFoundError>
+
+  if (!user.active) {
+    yield* new ValidationError({ field: "active", message: "User is inactive" });
+  }
+
+  return Result.ok(user);
+});
+// Result<User, NotFoundError | ValidationError>
 ```
 
 For errors with computed messages, add a custom constructor:

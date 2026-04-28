@@ -6,6 +6,7 @@ import {
   matchErrorPartial,
   isTaggedError,
 } from "./error";
+import { Result, type Result as ResultType } from "./result";
 
 class NotFoundError extends TaggedError("NotFoundError")<{
   id: string;
@@ -340,6 +341,74 @@ describe("TaggedError", () => {
 
       const error = new NotFoundError({ id: "123", message: "missing" });
       expect(matchAllHandlers(error)).toBe("not found: 123");
+    });
+  });
+
+  describe("Result.gen", () => {
+    it("can be used in a Result.gen block", () => {
+      const error = new NotFoundError({ id: "69", message: "missing" });
+      const result = Result.gen(function* () {
+        yield* error;
+        return Result.ok("success");
+      });
+      const _proof: ResultType<string, NotFoundError> = result;
+      void _proof;
+      expect(result.isErr()).toBe(true);
+      if (result.isOk()) throw "unreachable";
+      expect(result.error).toBe(error);
+    });
+
+    it("infers tagged errors in unions with yielded Results", () => {
+      const result = Result.gen(function* () {
+        if (Math.random() > 0.5) {
+          yield* Result.err(new ValidationError({ field: "name", message: "required" }));
+        }
+        yield* new NotFoundError({ id: "69", message: "missing" });
+        return Result.ok("success");
+      });
+      const _proof: ResultType<string, ValidationError | NotFoundError> = result;
+      void _proof;
+      expect(result.isErr()).toBe(true);
+    });
+
+    it("can be used in an async Result.gen block", async () => {
+      const error = new NotFoundError({ id: "69", message: "missing" });
+      const result = await Result.gen(async function* () {
+        yield* error;
+        return Result.ok("success");
+      });
+      const _proof: ResultType<string, NotFoundError> = result;
+      void _proof;
+      expect(result.isErr()).toBe(true);
+      if (result.isOk()) throw "unreachable";
+      expect(result.error).toBe(error);
+    });
+
+    it("runs generator cleanup when a tagged error short-circuits", () => {
+      let cleanedUp = false;
+      const result = Result.gen(function* () {
+        try {
+          yield* new NotFoundError({ id: "69", message: "missing" });
+        } finally {
+          cleanedUp = true;
+        }
+        return Result.ok("success");
+      });
+      expect(cleanedUp).toBe(true);
+      expect(result.isErr()).toBe(true);
+    });
+
+    it("supports built-in tagged errors in Result.gen blocks", () => {
+      const error = new UnhandledException({ cause: "boom" });
+      const result = Result.gen(function* () {
+        yield* error;
+        return Result.ok("success");
+      });
+      const _proof: ResultType<string, UnhandledException> = result;
+      void _proof;
+      expect(result.isErr()).toBe(true);
+      if (result.isOk()) throw "unreachable";
+      expect(result.error).toBe(error);
     });
   });
 });
