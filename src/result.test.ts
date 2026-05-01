@@ -2050,6 +2050,45 @@ describe("Type Inference", () => {
       expect(typeof compileTimeOnly).toBe("function");
     });
 
+    it("allows explicit type parameters on Result union instance methods", () => {
+      const compileTimeOnly = () => {
+        const getResult = (): Result<{ name: string }, ErrorA> => Result.ok({ name: "Ada" });
+        const myResult = getResult();
+
+        const matched = myResult.match<{ title?: string }>({
+          ok: (value) => ({ title: value.name }),
+          err: () => ({}),
+        });
+        expectTypeOf(matched).toEqualTypeOf<{ title?: string }>();
+
+        const mapped = myResult.map<string>((value) => value.name);
+        expectTypeOf(mapped).toEqualTypeOf<Result<string, ErrorA>>();
+
+        const mappedError = myResult.mapError<string>((error) => error._tag);
+        expectTypeOf(mappedError).toEqualTypeOf<Result<{ name: string }, string>>();
+
+        const chained = myResult.andThen<string, ErrorB>((value) =>
+          Result.ok<string, ErrorB>(value.name),
+        );
+        expectTypeOf(chained).toEqualTypeOf<Result<string, ErrorA | ErrorB>>();
+
+        const recovered = myResult.tryRecover<ErrorB>(() => Result.err(new ErrorB()));
+        expectTypeOf(recovered).toEqualTypeOf<Result<{ name: string }, ErrorB>>();
+
+        const chainedAsync = myResult.andThenAsync<string, ErrorB>(async (value) =>
+          Result.ok<string, ErrorB>(value.name),
+        );
+        expectTypeOf(chainedAsync).toEqualTypeOf<Promise<Result<string, ErrorA | ErrorB>>>();
+
+        const recoveredAsync = myResult.tryRecoverAsync<ErrorB>(async () =>
+          Result.err(new ErrorB()),
+        );
+        expectTypeOf(recoveredAsync).toEqualTypeOf<Promise<Result<{ name: string }, ErrorB>>>();
+      };
+
+      expect(typeof compileTimeOnly).toBe("function");
+    });
+
     it("preserves specialized direct variant return types", () => {
       const compileTimeOnly = () => {
         const okDirect = Result.ok<string, ErrorA>("ok");

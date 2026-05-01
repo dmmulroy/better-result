@@ -203,7 +203,8 @@ export class Ok<A, E = never> {
    * @example
    * ok(2).map(x => x * 2) // Ok(4)
    */
-  map<B, R extends AnyResult = this>(this: R, fn: (a: InferOk<R>) => B): MapReturn<R, B>;
+  map<B>(this: Ok<A, E>, fn: (a: A) => B): Ok<B, E>;
+  map<B, R extends AnyResult = Result<A, E>>(this: R, fn: (a: InferOk<R>) => B): MapReturn<R, B>;
   map<B>(fn: (a: A) => B): Ok<B, E> {
     return tryOrPanic(() => new Ok<B, E>(fn(this.value)), "map callback threw");
   }
@@ -215,7 +216,8 @@ export class Ok<A, E = never> {
    * @param _fn Ignored.
    * @returns Self with updated phantom E type.
    */
-  mapError<E2, R extends AnyResult = this>(
+  mapError<E2>(this: Ok<A, E>, _fn: (e: never) => E2): Ok<A, E2>;
+  mapError<E2, R extends AnyResult = Result<A, E>>(
     this: R,
     _fn: (e: InferErr<R>) => E2,
   ): MapErrorReturn<R, E2>;
@@ -234,7 +236,8 @@ export class Ok<A, E = never> {
    * @example
    * ok(42).tryRecover(() => err("fallback")) // Ok(42)
    */
-  tryRecover<E2, R extends AnyResult = this>(
+  tryRecover<E2>(this: Ok<A, E>, _fn: (e: never) => Result<NoInfer<A>, E2>): Ok<A, E2>;
+  tryRecover<E2, R extends AnyResult = Result<A, E>>(
     this: R,
     _fn: (e: InferErr<R>) => Result<NoInfer<InferSuccess<R>>, E2>,
   ): TryRecoverReturn<R, E2>;
@@ -253,7 +256,11 @@ export class Ok<A, E = never> {
    * @example
    * await ok(42).tryRecoverAsync(async () => err("fallback")) // Ok(42)
    */
-  tryRecoverAsync<E2, R extends AnyResult = this>(
+  tryRecoverAsync<E2>(
+    this: Ok<A, E>,
+    _fn: (e: never) => Promise<Result<NoInfer<A>, E2>>,
+  ): Promise<Ok<A, E2>>;
+  tryRecoverAsync<E2, R extends AnyResult = Result<A, E>>(
     this: R,
     _fn: (e: InferErr<R>) => Promise<Result<NoInfer<InferSuccess<R>>, E2>>,
   ): Promise<TryRecoverReturn<R, E2>>;
@@ -274,7 +281,8 @@ export class Ok<A, E = never> {
    * @example
    * ok(2).andThen(x => x > 0 ? ok(x) : err("negative")) // Ok(2)
    */
-  andThen<B, E2, R extends AnyResult = this>(
+  andThen<B, E2>(this: Ok<A, E>, fn: (a: A) => Result<B, E2>): Result<B, E | E2>;
+  andThen<B, E2, R extends AnyResult = Result<A, E>>(
     this: R,
     fn: (a: InferOk<R>) => Result<B, E2>,
   ): AndThenReturn<R, B, E2>;
@@ -294,7 +302,11 @@ export class Ok<A, E = never> {
    * @example
    * await ok(1).andThenAsync(async x => ok(await fetchData(x)))
    */
-  andThenAsync<B, E2, R extends AnyResult = this>(
+  andThenAsync<B, E2>(
+    this: Ok<A, E>,
+    fn: (a: A) => Promise<Result<B, E2>>,
+  ): Promise<Result<B, E | E2>>;
+  andThenAsync<B, E2, R extends AnyResult = Result<A, E>>(
     this: R,
     fn: (a: InferOk<R>) => Promise<Result<B, E2>>,
   ): Promise<AndThenReturn<R, B, E2>>;
@@ -313,7 +325,8 @@ export class Ok<A, E = never> {
    * @example
    * ok(2).match({ ok: x => x * 2, err: () => 0 }) // 4
    */
-  match<T, R extends AnyResult = this>(
+  match<T>(this: Ok<A, E>, handlers: { ok: (a: A) => T; err: (e: never) => T }): T;
+  match<T, R extends AnyResult = Result<A, E>>(
     this: R,
     handlers: { ok: (a: InferOk<R>) => T; err: (e: InferErr<R>) => T },
   ): T;
@@ -358,7 +371,8 @@ export class Ok<A, E = never> {
    * @example
    * ok(2).tap(console.log).map(x => x * 2) // logs 2, returns Ok(4)
    */
-  tap<R extends AnyResult = this>(this: R, fn: (a: InferOk<R>) => void): R;
+  tap(this: Ok<A, E>, fn: (a: A) => void): Ok<A, E>;
+  tap<R extends AnyResult = Result<A, E>>(this: R, fn: (a: InferOk<R>) => void): R;
   tap(fn: (a: A) => void): Ok<A, E> {
     return tryOrPanic(() => {
       fn(this.value);
@@ -376,7 +390,11 @@ export class Ok<A, E = never> {
    * @example
    * await ok(2).tapAsync(async x => await log(x))
    */
-  tapAsync<R extends AnyResult = this>(this: R, fn: (a: InferOk<R>) => Promise<void>): Promise<R>;
+  tapAsync(this: Ok<A, E>, fn: (a: A) => Promise<void>): Promise<Ok<A, E>>;
+  tapAsync<R extends AnyResult = Result<A, E>>(
+    this: R,
+    fn: (a: InferOk<R>) => Promise<void>,
+  ): Promise<R>;
   tapAsync(fn: (a: A) => Promise<void>): Promise<Ok<A, E>> {
     return tryOrPanicAsync(async () => {
       await fn(this.value);
@@ -390,7 +408,8 @@ export class Ok<A, E = never> {
    * @param _fn Ignored.
    * @returns Self.
    */
-  tapError<R extends AnyResult = this>(this: R, _fn: (e: InferErr<R>) => void): R;
+  tapError(this: Ok<A, E>, _fn: (e: never) => void): Ok<A, E>;
+  tapError<R extends AnyResult = Result<A, E>>(this: R, _fn: (e: InferErr<R>) => void): R;
   tapError(_fn: (e: never) => void): Ok<A, E> {
     return this;
   }
@@ -401,7 +420,8 @@ export class Ok<A, E = never> {
    * @param _fn Ignored.
    * @returns Promise of self.
    */
-  tapErrorAsync<R extends AnyResult = this>(
+  tapErrorAsync(this: Ok<A, E>, _fn: (e: never) => Promise<void>): Promise<Ok<A, E>>;
+  tapErrorAsync<R extends AnyResult = Result<A, E>>(
     this: R,
     _fn: (e: InferErr<R>) => Promise<void>,
   ): Promise<R>;
@@ -416,7 +436,8 @@ export class Ok<A, E = never> {
    * @returns Self.
    * @throws {Panic} If ok handler throws.
    */
-  tapBoth<R extends AnyResult = this>(this: R, handlers: TapBothHandlersFor<R>): R;
+  tapBoth(this: Ok<A, E>, handlers: TapBothOkHandlers<A>): Ok<A, E>;
+  tapBoth<R extends AnyResult = Result<A, E>>(this: R, handlers: TapBothHandlersFor<R>): R;
   tapBoth(handlers: TapBothOkHandlers<A>): Ok<A, E> {
     return tryOrPanic(() => {
       handlers.ok(this.value);
@@ -431,7 +452,8 @@ export class Ok<A, E = never> {
    * @returns Promise of self.
    * @throws {Panic} If ok handler throws synchronously or rejects.
    */
-  tapBothAsync<R extends AnyResult = this>(
+  tapBothAsync(this: Ok<A, E>, handlers: TapBothAsyncOkHandlers<A>): Promise<Ok<A, E>>;
+  tapBothAsync<R extends AnyResult = Result<A, E>>(
     this: R,
     handlers: TapBothAsyncHandlersFor<R>,
   ): Promise<R>;
@@ -485,7 +507,8 @@ export class Err<T, E> {
    * @param _fn Ignored.
    * @returns Self.
    */
-  map<U, R extends AnyResult = this>(this: R, _fn: (a: InferOk<R>) => U): MapReturn<R, U>;
+  map<U>(this: Err<T, E>, _fn: (a: never) => U): Err<U, E>;
+  map<U, R extends AnyResult = Result<T, E>>(this: R, _fn: (a: InferOk<R>) => U): MapReturn<R, U>;
   map<U>(_fn: (a: never) => U): Err<U, E> {
     // SAFETY: T is phantom (not used at runtime). Err only holds `error: E`.
     return this as unknown as Err<U, E>;
@@ -502,7 +525,8 @@ export class Err<T, E> {
    * @example
    * err("fail").mapError(e => new Error(e)) // Err(Error("fail"))
    */
-  mapError<E2, R extends AnyResult = this>(
+  mapError<E2>(this: Err<T, E>, fn: (e: E) => E2): Err<T, E2>;
+  mapError<E2, R extends AnyResult = Result<T, E>>(
     this: R,
     fn: (e: InferErr<R>) => E2,
   ): MapErrorReturn<R, E2>;
@@ -521,7 +545,8 @@ export class Err<T, E> {
    * @example
    * err<number, string>("missing").tryRecover(e => e === "missing" ? ok(0) : err(new Error(e))) // Ok(0)
    */
-  tryRecover<E2, R extends AnyResult = this>(
+  tryRecover<E2>(this: Err<T, E>, fn: (e: E) => Result<NoInfer<T>, E2>): Result<T, E2>;
+  tryRecover<E2, R extends AnyResult = Result<T, E>>(
     this: R,
     fn: (e: InferErr<R>) => Result<NoInfer<InferSuccess<R>>, E2>,
   ): TryRecoverReturn<R, E2>;
@@ -540,7 +565,11 @@ export class Err<T, E> {
    * @example
    * await err<number, string>("missing").tryRecoverAsync(async e => e === "missing" ? ok(0) : err(new Error(e))) // Ok(0)
    */
-  tryRecoverAsync<E2, R extends AnyResult = this>(
+  tryRecoverAsync<E2>(
+    this: Err<T, E>,
+    fn: (e: E) => Promise<Result<NoInfer<T>, E2>>,
+  ): Promise<Result<T, E2>>;
+  tryRecoverAsync<E2, R extends AnyResult = Result<T, E>>(
     this: R,
     fn: (e: InferErr<R>) => Promise<Result<NoInfer<InferSuccess<R>>, E2>>,
   ): Promise<TryRecoverReturn<R, E2>>;
@@ -556,7 +585,8 @@ export class Err<T, E> {
    * @param _fn Ignored.
    * @returns Self.
    */
-  andThen<U, E2, R extends AnyResult = this>(
+  andThen<U, E2>(this: Err<T, E>, _fn: (a: never) => Result<U, E2>): Err<U, E | E2>;
+  andThen<U, E2, R extends AnyResult = Result<T, E>>(
     this: R,
     _fn: (a: InferOk<R>) => Result<U, E2>,
   ): AndThenReturn<R, U, E2>;
@@ -573,7 +603,11 @@ export class Err<T, E> {
    * @param _fn Ignored.
    * @returns Promise of self.
    */
-  andThenAsync<U, E2, R extends AnyResult = this>(
+  andThenAsync<U, E2>(
+    this: Err<T, E>,
+    _fn: (a: never) => Promise<Result<U, E2>>,
+  ): Promise<Err<U, E | E2>>;
+  andThenAsync<U, E2, R extends AnyResult = Result<T, E>>(
     this: R,
     _fn: (a: InferOk<R>) => Promise<Result<U, E2>>,
   ): Promise<AndThenReturn<R, U, E2>>;
@@ -593,7 +627,8 @@ export class Err<T, E> {
    * @example
    * err("fail").match({ ok: x => x, err: e => e.length }) // 4
    */
-  match<U, R extends AnyResult = this>(
+  match<U>(this: Err<T, E>, handlers: { ok: (a: never) => U; err: (e: E) => U }): U;
+  match<U, R extends AnyResult = Result<T, E>>(
     this: R,
     handlers: { ok: (a: InferOk<R>) => U; err: (e: InferErr<R>) => U },
   ): U;
@@ -635,7 +670,8 @@ export class Err<T, E> {
    * @param _fn Ignored.
    * @returns Self.
    */
-  tap<R extends AnyResult = this>(this: R, _fn: (a: InferOk<R>) => void): R;
+  tap(this: Err<T, E>, _fn: (a: never) => void): Err<T, E>;
+  tap<R extends AnyResult = Result<T, E>>(this: R, _fn: (a: InferOk<R>) => void): R;
   tap(_fn: (a: never) => void): Err<T, E> {
     return this;
   }
@@ -650,7 +686,8 @@ export class Err<T, E> {
    * @example
    * err("fail").tapError(console.error) // logs "fail", returns Err("fail")
    */
-  tapError<R extends AnyResult = this>(this: R, fn: (e: InferErr<R>) => void): R;
+  tapError(this: Err<T, E>, fn: (e: E) => void): Err<T, E>;
+  tapError<R extends AnyResult = Result<T, E>>(this: R, fn: (e: InferErr<R>) => void): R;
   tapError(fn: (e: E) => void): Err<T, E> {
     return tryOrPanic(() => {
       fn(this.error);
@@ -664,7 +701,11 @@ export class Err<T, E> {
    * @param _fn Ignored.
    * @returns Promise of self.
    */
-  tapAsync<R extends AnyResult = this>(this: R, _fn: (a: InferOk<R>) => Promise<void>): Promise<R>;
+  tapAsync(this: Err<T, E>, _fn: (a: never) => Promise<void>): Promise<Err<T, E>>;
+  tapAsync<R extends AnyResult = Result<T, E>>(
+    this: R,
+    _fn: (a: InferOk<R>) => Promise<void>,
+  ): Promise<R>;
   tapAsync(_fn: (a: never) => Promise<void>): Promise<Err<T, E>> {
     return Promise.resolve(this);
   }
@@ -679,7 +720,8 @@ export class Err<T, E> {
    * @example
    * await err("fail").tapErrorAsync(async e => await trace("request.failed", { e }))
    */
-  tapErrorAsync<R extends AnyResult = this>(
+  tapErrorAsync(this: Err<T, E>, fn: (e: E) => Promise<void>): Promise<Err<T, E>>;
+  tapErrorAsync<R extends AnyResult = Result<T, E>>(
     this: R,
     fn: (e: InferErr<R>) => Promise<void>,
   ): Promise<R>;
@@ -697,7 +739,8 @@ export class Err<T, E> {
    * @returns Self.
    * @throws {Panic} If err handler throws.
    */
-  tapBoth<R extends AnyResult = this>(this: R, handlers: TapBothHandlersFor<R>): R;
+  tapBoth(this: Err<T, E>, handlers: TapBothErrHandlers<E>): Err<T, E>;
+  tapBoth<R extends AnyResult = Result<T, E>>(this: R, handlers: TapBothHandlersFor<R>): R;
   tapBoth(handlers: TapBothErrHandlers<E>): Err<T, E> {
     return tryOrPanic(() => {
       handlers.err(this.error);
@@ -712,7 +755,8 @@ export class Err<T, E> {
    * @returns Promise of self.
    * @throws {Panic} If err handler throws synchronously or rejects.
    */
-  tapBothAsync<R extends AnyResult = this>(
+  tapBothAsync(this: Err<T, E>, handlers: TapBothAsyncErrHandlers<E>): Promise<Err<T, E>>;
+  tapBothAsync<R extends AnyResult = Result<T, E>>(
     this: R,
     handlers: TapBothAsyncHandlersFor<R>,
   ): Promise<R>;
