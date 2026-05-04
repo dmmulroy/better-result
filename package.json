@@ -21,7 +21,9 @@
   },
   "files": [
     "dist/index.d.mts",
-    "dist/index.mjs"
+    "dist/index.d.mts.map",
+    "dist/index.mjs",
+    "dist/index.mjs.map"
   ],
   "type": "module",
   "main": "./dist/index.mjs",
