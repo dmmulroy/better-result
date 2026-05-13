@@ -447,14 +447,14 @@ const serialize = <T, E>(result: Result<T, E>): SerializedResult<T, E> => {
     : { status: "error", error: result.error };
 };
 
-const deserialize = <T, E>(value: unknown): Result<T, E | ResultDeserializationError> => {
+function deserialize<T = never, E = never>(x: SerializedResult<T, E>): Result<T, E>;
+function deserialize<T, E>(x: unknown): Result<T, E | ResultDeserializationError>;
+function deserialize(value: unknown) {
   if (isSerializedResult(value)) {
-    return value.status === "ok"
-      ? (new Ok(value.value) as Result<T, E>)
-      : (new Err(value.error) as Result<T, E>);
+    return value.status === "ok" ? ok(value.value) : err(value.error);
   }
   return err(new ResultDeserializationError({ value }));
-};
+}
 
 /**
  * @deprecated Use `Result.deserialize` instead. Will be removed in 3.0.
