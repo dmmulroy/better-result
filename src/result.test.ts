@@ -1643,7 +1643,8 @@ describe("Result", () => {
       ];
 
       for (const input of testCases) {
-        const result = Result.deserialize(input);
+        const result = Result.deserialize<number, string>(input);
+        expectTypeOf(result).toEqualTypeOf<Result<number, string | ResultDeserializationError>>();
         expect(Result.isError(result)).toBe(true);
         if (Result.isError(result)) {
           expect(result.error).toBeInstanceOf(ResultDeserializationError);

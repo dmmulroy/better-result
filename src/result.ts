@@ -460,7 +460,7 @@ function deserialize(value: unknown) {
  * @deprecated Use `Result.deserialize` instead. Will be removed in 3.0.
  */
 const hydrate = <T, E>(value: unknown): Result<T, E | ResultDeserializationError> => {
-  return deserialize(value as never);
+  return deserialize(value);
 };
 
 const partition = <T, E>(results: readonly Result<T, E>[]): [T[], E[]] => {
