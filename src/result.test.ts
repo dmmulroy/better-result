@@ -1592,21 +1592,44 @@ describe("Result", () => {
   });
 
   describe("deserialize", () => {
+    it("returns Result<T, E> for known Result-like input", () => {
+      const serialized1 =
+        Math.random() > 0.5
+          ? { status: "ok" as const, value: 42 }
+          : { status: "error" as const, error: "fail" };
+      const result1 = Result.deserialize(serialized1);
+      expectTypeOf(result1).toEqualTypeOf<Result<number, string>>();
+
+      const serialized2 = Math.random() > 0.5 ? Result.ok(42) : Result.err("fail");
+      const result2 = Result.deserialize(serialized2);
+      expectTypeOf(result2).toEqualTypeOf<Result<number, string>>();
+    });
+
+    it("returns Result<unknown, unknown> for unknown, non-Result-like input", () => {
+      const input = { foo: "bar" };
+      const result = Result.deserialize(input);
+      expectTypeOf(result).toEqualTypeOf<Result<unknown, unknown>>();
+    });
+
     it("deserializes Ok object to Ok instance", () => {
       const serialized = { status: "ok" as const, value: 42 };
-      const result = Result.deserialize<number, string>(serialized);
+      const result = Result.deserialize(serialized);
+      expectTypeOf(result).toEqualTypeOf<Result<number, never>>();
       expect(Result.isOk(result)).toBe(true);
       expect(result).toBeInstanceOf(Ok);
       expect(result.unwrap()).toBe(42);
     });
 
     it("deserializes Err object to Err instance", () => {
-      const serialized = { status: "error" as const, error: "fail" };
-      const result = Result.deserialize<number, string>(serialized);
-      expect(Result.isError(result)).toBe(true);
-      expect(result).toBeInstanceOf(Err);
-      if (Result.isError(result)) {
-        expect(result.error).toBe("fail");
+      {
+        const serialized = { status: "error" as const, error: "fail" };
+        const result = Result.deserialize(serialized);
+        expectTypeOf(result).toEqualTypeOf<Result<never, string>>();
+        expect(Result.isError(result)).toBe(true);
+        expect(result).toBeInstanceOf(Err);
+        if (Result.isError(result)) {
+          expect(result.error).toBe("fail");
+        }
       }
     });
 
