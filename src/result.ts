@@ -19,6 +19,10 @@ export { Err, Ok } from "./core";
 export type { InferErr, InferOk } from "./core";
 export type Result<T, E> = import("./core").Result<T, E>;
 
+export type TryContext = {
+  readonly attempt: number;
+};
+
 /** Executes fn, panics if it throws. */
 const tryOrPanic = <T>(fn: () => T, message: string): T => {
   try {
@@ -39,27 +43,29 @@ type NoInfer<T> = [T][T extends unknown ? 0 : never];
 
 const tryFn: {
   <A, E>(
-    options: { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E> },
+    options: { try: (context: TryContext) => Awaited<A>; catch: (cause: unknown) => Awaited<E> },
     config?: { retry?: { times: number } },
   ): Result<A, E>;
   <A>(
-    thunk: () => Awaited<A>,
+    thunk: (context: TryContext) => Awaited<A>,
     config?: { retry?: { times: number } },
   ): Result<A, UnhandledException>;
 } = <A, E>(
-  options: (() => Awaited<A>) | { try: () => Awaited<A>; catch: (cause: unknown) => Awaited<E> },
+  options:
+    | ((context: TryContext) => Awaited<A>)
+    | { try: (context: TryContext) => Awaited<A>; catch: (cause: unknown) => Awaited<E> },
   config?: { retry?: { times: number } },
 ): Result<A, E | UnhandledException> => {
-  const execute = (): Result<A, E | UnhandledException> => {
+  const execute = (context: TryContext): Result<A, E | UnhandledException> => {
     if (typeof options === "function") {
       try {
-        return ok(options());
+        return ok(options(context));
       } catch (cause) {
         return err(new UnhandledException({ cause }));
       }
     }
     try {
-      return ok(options.try());
+      return ok(options.try(context));
     } catch (originalCause) {
       // If the user's catch handler throws, it's a defect — Panic
       try {
@@ -71,10 +77,12 @@ const tryFn: {
   };
 
   const times = config?.retry?.times ?? 0;
-  let result = execute();
+  let attempt = 1;
+  let result = execute({ attempt });
 
   for (let retry = 0; retry < times && result.status === "error"; retry++) {
-    result = execute();
+    attempt++;
+    result = execute({ attempt });
   }
 
   return result;
@@ -92,29 +100,32 @@ type RetryConfig<E = unknown> = {
 
 const tryPromise: {
   <A, E>(
-    options: { try: () => Promise<A>; catch: (cause: unknown) => E | Promise<E> },
+    options: {
+      try: (context: TryContext) => Promise<A>;
+      catch: (cause: unknown) => E | Promise<E>;
+    },
     config?: RetryConfig<E>,
   ): Promise<Result<A, E>>;
   <A>(
-    thunk: () => Promise<A>,
+    thunk: (context: TryContext) => Promise<A>,
     config?: RetryConfig<UnhandledException>,
   ): Promise<Result<A, UnhandledException>>;
 } = async <A, E>(
   options:
-    | (() => Promise<A>)
-    | { try: () => Promise<A>; catch: (cause: unknown) => E | Promise<E> },
+    | ((context: TryContext) => Promise<A>)
+    | { try: (context: TryContext) => Promise<A>; catch: (cause: unknown) => E | Promise<E> },
   config?: RetryConfig<E | UnhandledException>,
 ): Promise<Result<A, E | UnhandledException>> => {
-  const execute = async (): Promise<Result<A, E | UnhandledException>> => {
+  const execute = async (context: TryContext): Promise<Result<A, E | UnhandledException>> => {
     if (typeof options === "function") {
       try {
-        return ok(await options());
+        return ok(await options(context));
       } catch (cause) {
         return err(new UnhandledException({ cause }));
       }
     }
     try {
-      return ok(await options.try());
+      return ok(await options.try(context));
     } catch (originalCause) {
       // If the user's catch handler throws, it's a defect — Panic
       try {
@@ -128,7 +139,7 @@ const tryPromise: {
   const retry = config?.retry;
 
   if (!retry) {
-    return execute();
+    return execute({ attempt: 1 });
   }
 
   const getDelay = (retryAttempt: number): number => {
@@ -144,17 +155,19 @@ const tryPromise: {
 
   const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-  let result = await execute();
+  let attempt = 1;
+  let result = await execute({ attempt });
 
   const shouldRetryFn = retry.shouldRetry ?? (() => true);
 
-  for (let attempt = 0; attempt < retry.times; attempt++) {
+  for (let retryAttempt = 0; retryAttempt < retry.times; retryAttempt++) {
     if (result.status !== "error") break;
     const error = result.error;
     const shouldContinue = tryOrPanic(() => shouldRetryFn(error), "shouldRetry predicate threw");
     if (!shouldContinue) break;
-    await sleep(getDelay(attempt));
-    result = await execute();
+    await sleep(getDelay(retryAttempt));
+    attempt++;
+    result = await execute({ attempt });
   }
 
   return result;

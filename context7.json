@@ -10,7 +10,7 @@
     "Extend TaggedError(\"YourError\") for discriminated error types - creates errors with _tag for exhaustive matching",
     "Return Result.ok() or Result.err() at the end of Result.gen blocks - generators must return a Result",
     "Use Result.try with catch handler to convert exceptions to typed errors - wrap throwing functions safely",
-    "Use Result.tryPromise for async ops with optional retry - supports times, delayMs, backoff, shouldRetry options",
+    "Use Result.tryPromise for async ops with optional retry - supports 0-based TryContext attempt plus times, delayMs, backoff, shouldRetry options",
     "For async retry decisions, enrich error in catch handler (can be async) then use shouldRetry synchronously",
     "Use .match({ ok, err }) for exhaustive handling of both Result variants - forces explicit error handling",
     "Use matchError for exhaustive pattern matching on TaggedError unions - compiler enforces all error variants",
