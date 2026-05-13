@@ -77,7 +77,7 @@ const tryFn: {
   };
 
   const times = config?.retry?.times ?? 0;
-  let attempt = 0;
+  let attempt = 1;
   let result = execute({ attempt });
 
   for (let retry = 0; retry < times && result.status === "error"; retry++) {
@@ -139,7 +139,7 @@ const tryPromise: {
   const retry = config?.retry;
 
   if (!retry) {
-    return execute({ attempt: 0 });
+    return execute({ attempt: 1 });
   }
 
   const getDelay = (retryAttempt: number): number => {
@@ -155,7 +155,7 @@ const tryPromise: {
 
   const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-  let attempt = 0;
+  let attempt = 1;
   let result = await execute({ attempt });
 
   const shouldRetryFn = retry.shouldRetry ?? (() => true);

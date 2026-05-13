@@ -219,12 +219,12 @@ describe("Result", () => {
       expect(attempts).toBe(3);
     });
 
-    it("passes 0-based attempt context to function overload", () => {
+    it("passes 1-based attempt context to function overload", () => {
       const receivedAttempts: number[] = [];
       const result = Result.try(
         ({ attempt }) => {
           receivedAttempts.push(attempt);
-          if (attempt < 2) throw new Error("fail");
+          if (attempt < 3) throw new Error("fail");
           return "success";
         },
         { retry: { times: 3 } },
@@ -232,16 +232,16 @@ describe("Result", () => {
 
       expect(Result.isOk(result)).toBe(true);
       expect(result.unwrap()).toBe("success");
-      expect(receivedAttempts).toEqual([0, 1, 2]);
+      expect(receivedAttempts).toEqual([1, 2, 3]);
     });
 
-    it("passes 0-based attempt context to object overload", () => {
+    it("passes 1-based attempt context to object overload", () => {
       const receivedAttempts: number[] = [];
       const result = Result.try(
         {
           try: ({ attempt }) => {
             receivedAttempts.push(attempt);
-            if (attempt < 2) throw new Error("fail");
+            if (attempt < 3) throw new Error("fail");
             return "success";
           },
           catch: (e) => ({ msg: (e as Error).message }),
@@ -251,7 +251,7 @@ describe("Result", () => {
 
       expect(Result.isOk(result)).toBe(true);
       expect(result.unwrap()).toBe("success");
-      expect(receivedAttempts).toEqual([0, 1, 2]);
+      expect(receivedAttempts).toEqual([1, 2, 3]);
     });
 
     it("throws Panic when catch handler throws", () => {
@@ -319,12 +319,12 @@ describe("Result", () => {
       expect(elapsed).toBeGreaterThanOrEqual(25);
     });
 
-    it("passes 0-based attempt context to function overload", async () => {
+    it("passes 1-based attempt context to function overload", async () => {
       const receivedAttempts: number[] = [];
       const result = await Result.tryPromise(
         ({ attempt }) => {
           receivedAttempts.push(attempt);
-          if (attempt < 2) return Promise.reject(new Error("fail"));
+          if (attempt < 3) return Promise.reject(new Error("fail"));
           return Promise.resolve("success");
         },
         { retry: { times: 3, delayMs: 1, backoff: "constant" } },
@@ -332,16 +332,16 @@ describe("Result", () => {
 
       expect(Result.isOk(result)).toBe(true);
       expect(result.unwrap()).toBe("success");
-      expect(receivedAttempts).toEqual([0, 1, 2]);
+      expect(receivedAttempts).toEqual([1, 2, 3]);
     });
 
-    it("passes 0-based attempt context to object overload", async () => {
+    it("passes 1-based attempt context to object overload", async () => {
       const receivedAttempts: number[] = [];
       const result = await Result.tryPromise(
         {
           try: ({ attempt }) => {
             receivedAttempts.push(attempt);
-            if (attempt < 2) return Promise.reject(new Error("fail"));
+            if (attempt < 3) return Promise.reject(new Error("fail"));
             return Promise.resolve("success");
           },
           catch: (e) => ({ msg: (e as Error).message }),
@@ -351,7 +351,7 @@ describe("Result", () => {
 
       expect(Result.isOk(result)).toBe(true);
       expect(result.unwrap()).toBe("success");
-      expect(receivedAttempts).toEqual([0, 1, 2]);
+      expect(receivedAttempts).toEqual([1, 2, 3]);
     });
 
     it("throws Panic when catch handler throws", async () => {

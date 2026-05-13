@@ -254,7 +254,7 @@ const result = await Result.tryPromise(() => fetch(url), {
 });
 ```
 
-The try callback receives a `TryContext` with a 0-based `attempt` number:
+The try callback receives a `TryContext` with a 1-based `attempt` number:
 
 ```ts
 const result = await Result.tryPromise(({ attempt }) => fetchWithRetryContext(url, attempt), {
