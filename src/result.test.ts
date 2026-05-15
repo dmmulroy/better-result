@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { Result, Ok, Err } from "./result";
 import { Panic, ResultDeserializationError, UnhandledException } from "./error";
 
@@ -282,6 +282,87 @@ describe("Result", () => {
       expect(attempts).toBe(3);
       // exponential: 10ms + 20ms = 30ms minimum
       expect(elapsed).toBeGreaterThanOrEqual(25);
+    });
+
+    it("jitter: true caps total delay at baseSum when random ≈ 1", async () => {
+      // Force max jitter so total delay equals the deterministic base sum.
+      vi.spyOn(Math, "random").mockReturnValue(0.999_999);
+
+      let attempts = 0;
+      const start = Date.now();
+      const result = await Result.tryPromise(
+        () => {
+          attempts++;
+          if (attempts < 3) return Promise.reject(new Error("fail"));
+          return Promise.resolve("ok");
+        },
+        { retry: { times: 3, delayMs: 50, backoff: "constant", jitter: true } },
+      );
+      const elapsed = Date.now() - start;
+      expect(Result.isOk(result)).toBe(true);
+      expect(attempts).toBe(3);
+      // Two sleeps, base 50ms each → max ~100ms. Allow scheduler slack.
+      expect(elapsed).toBeLessThanOrEqual(150);
+    });
+
+    it("jitter: true with Math.random()=0 produces near-zero delay", async () => {
+      vi.spyOn(Math, "random").mockReturnValue(0);
+
+      let attempts = 0;
+      const start = Date.now();
+      const result = await Result.tryPromise(
+        () => {
+          attempts++;
+          if (attempts < 3) return Promise.reject(new Error("fail"));
+          return Promise.resolve("ok");
+        },
+        { retry: { times: 3, delayMs: 100, backoff: "constant", jitter: true } },
+      );
+      const elapsed = Date.now() - start;
+      expect(Result.isOk(result)).toBe(true);
+      expect(attempts).toBe(3);
+      // Full jitter at random()=0 → ~0ms per sleep. Allow scheduler slack.
+      expect(elapsed).toBeLessThan(50);
+    });
+
+    it("jitter: 0 is equivalent to no jitter", async () => {
+      let attempts = 0;
+      const start = Date.now();
+      const result = await Result.tryPromise(
+        () => {
+          attempts++;
+          if (attempts < 3) return Promise.reject(new Error("fail"));
+          return Promise.resolve("ok");
+        },
+        { retry: { times: 3, delayMs: 10, backoff: "exponential", jitter: 0 } },
+      );
+      const elapsed = Date.now() - start;
+      expect(Result.isOk(result)).toBe(true);
+      expect(attempts).toBe(3);
+      // Same as deterministic exponential: 10ms + 20ms = 30ms minimum.
+      expect(elapsed).toBeGreaterThanOrEqual(25);
+    });
+
+    it("jitter: 0.5 lower bound is half the base delay", async () => {
+      // random()=0 ⇒ delay = baseDelay * (1 - 0.5) = baseDelay / 2.
+      vi.spyOn(Math, "random").mockReturnValue(0);
+
+      let attempts = 0;
+      const start = Date.now();
+      const result = await Result.tryPromise(
+        () => {
+          attempts++;
+          if (attempts < 2) return Promise.reject(new Error("fail"));
+          return Promise.resolve("ok");
+        },
+        { retry: { times: 2, delayMs: 100, backoff: "constant", jitter: 0.5 } },
+      );
+      const elapsed = Date.now() - start;
+      expect(Result.isOk(result)).toBe(true);
+      expect(attempts).toBe(2);
+      // One sleep, base 100ms, factor 0.5, random()=0 → ~50ms.
+      expect(elapsed).toBeGreaterThanOrEqual(40);
+      expect(elapsed).toBeLessThanOrEqual(90);
     });
 
     it("throws Panic when catch handler throws", async () => {

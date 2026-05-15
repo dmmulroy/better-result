@@ -314,6 +314,34 @@ const result = await Result.tryPromise(
 );
 ```
 
+### Jitter
+
+To avoid thundering-herd retries when many callers fail at the same time, randomize each delay with `jitter`:
+
+```ts
+const result = await Result.tryPromise(() => fetch(url), {
+  retry: {
+    times: 3,
+    delayMs: 100,
+    backoff: "exponential",
+    jitter: true, // full jitter: delay is uniform in [0, baseDelay]
+  },
+});
+```
+
+Pass a number between `0` and `1` to control how much of the base delay is randomized:
+
+```ts
+retry: {
+  times: 3,
+  delayMs: 100,
+  backoff: "exponential",
+  jitter: 0.3, // delay uniform in [0.7 * baseDelay, baseDelay]
+}
+```
+
+`jitter: true` is equivalent to `jitter: 1`.
+
 ## UnhandledException
 
 When `Result.try()` or `Result.tryPromise()` catches an exception without a custom handler, the error type is `UnhandledException`:
