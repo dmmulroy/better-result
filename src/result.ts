@@ -87,6 +87,12 @@ type RetryConfig<E = unknown> = {
     backoff: "linear" | "constant" | "exponential";
     /** Predicate to determine if an error should trigger a retry. Defaults to always retry. */
     shouldRetry?: (error: E) => boolean;
+    /**
+     * Shortens each delay by a random amount so simultaneous retries don't fire in lockstep.
+     * The number is the maximum reduction — e.g. `0.3` may shave up to 30% off each delay.
+     * `true` allows full reduction (down to 0). Defaults to no jitter.
+     */
+    jitter?: boolean | number;
   };
 };
 
@@ -131,7 +137,7 @@ const tryPromise: {
     return execute();
   }
 
-  const getDelay = (retryAttempt: number): number => {
+  const getBaseDelay = (retryAttempt: number): number => {
     switch (retry.backoff) {
       case "constant":
         return retry.delayMs;
@@ -140,6 +146,13 @@ const tryPromise: {
       case "exponential":
         return retry.delayMs * 2 ** retryAttempt;
     }
+  };
+
+  const getDelay = (retryAttempt: number): number => {
+    const baseDelay = getBaseDelay(retryAttempt);
+    if (!retry.jitter) return baseDelay;
+    const factor = retry.jitter === true ? 1 : Math.max(0, Math.min(1, retry.jitter));
+    return baseDelay * (1 - factor + Math.random() * factor);
   };
 
   const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
