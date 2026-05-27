@@ -18,4 +18,4 @@ export {
   matchErrorPartial,
   isTaggedError,
 } from "./error";
-export type { TaggedErrorInstance, TaggedErrorClass } from "./error";
+export type { AnyTaggedError, TaggedErrorInstance, TaggedErrorClass } from "./error";

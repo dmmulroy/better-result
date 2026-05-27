@@ -458,7 +458,7 @@ matchErrorPartial(
 );
 
 // Type guards
-TaggedError.is(value); // any tagged error
+TaggedError.is(value); // any TaggedError instance, including toJSON()
 NotFoundError.is(value); // specific class
 ```
 
@@ -606,6 +606,7 @@ const result = Result.deserialize<User, ValidationError>(serialized);
 | ------------------------ | ---------------------------- |
 | `InferOk<R>`             | Extract Ok type from Result  |
 | `InferErr<R>`            | Extract Err type from Result |
+| `AnyTaggedError`         | Generic TaggedError instance |
 | `SerializedResult<T, E>` | Plain object form of Result  |
 | `SerializedOk<T>`        | Plain object form of Ok      |
 | `SerializedErr<E>`       | Plain object form of Err     |

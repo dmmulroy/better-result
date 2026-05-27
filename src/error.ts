@@ -9,12 +9,21 @@ const serializeCause = (cause: unknown): unknown => {
   return cause;
 };
 
-/** Any tagged error (for generic constraints) */
-type AnyTaggedError = Error & { readonly _tag: string };
+/** Tagged error-like value (for generic constraints). */
+type TaggedErrorLike = Error & { readonly _tag: string };
 
-/** Type guard for any tagged error */
+/** Any TaggedError instance. */
+export type AnyTaggedError = TaggedErrorLike & { toJSON(): object };
+
+/** Type guard for any TaggedError instance. */
 const isAnyTaggedError = (value: unknown): value is AnyTaggedError => {
-  return value instanceof Error && "_tag" in value && typeof value._tag === "string";
+  return (
+    value instanceof Error &&
+    "_tag" in value &&
+    typeof value._tag === "string" &&
+    "toJSON" in value &&
+    typeof value.toJSON === "function"
+  );
 };
 
 /**
@@ -121,15 +130,15 @@ export type TaggedErrorClass<Tag extends string, Props> = {
 };
 
 /** Handler map for exhaustive matching */
-type MatchHandlers<E extends AnyTaggedError, R> = {
+type MatchHandlers<E extends TaggedErrorLike, R> = {
   [K in E["_tag"]]: (err: Extract<E, { _tag: K }>) => R;
 };
 
 /** Partial handler map for non-exhaustive matching */
-type PartialMatchHandlers<E extends AnyTaggedError, R> = Partial<MatchHandlers<E, R>>;
+type PartialMatchHandlers<E extends TaggedErrorLike, R> = Partial<MatchHandlers<E, R>>;
 
 /** Extract handled tags from a handlers object */
-type HandledTags<E extends AnyTaggedError, H> = Extract<keyof H, E["_tag"]>;
+type HandledTags<E extends TaggedErrorLike, H> = Extract<keyof H, E["_tag"]>;
 
 /**
  * Exhaustive pattern match on tagged error union.
@@ -148,9 +157,9 @@ type HandledTags<E extends AnyTaggedError, H> = Extract<keyof H, E["_tag"]>;
  * }));
  */
 export const matchError: {
-  <E extends AnyTaggedError, R>(handlers: MatchHandlers<E, R>): (err: E) => R;
-  <E extends AnyTaggedError, R>(err: E, handlers: MatchHandlers<E, R>): R;
-} = dual(2, <E extends AnyTaggedError, R>(err: E, handlers: MatchHandlers<E, R>): R => {
+  <E extends TaggedErrorLike, R>(handlers: MatchHandlers<E, R>): (err: E) => R;
+  <E extends TaggedErrorLike, R>(err: E, handlers: MatchHandlers<E, R>): R;
+} = dual(2, <E extends TaggedErrorLike, R>(err: E, handlers: MatchHandlers<E, R>): R => {
   const handler = handlers[err._tag as E["_tag"]];
   // SAFETY: handler exists if handlers satisfies MatchHandlers<E, R>
   return handler(err as Extract<E, { _tag: (typeof err)["_tag"] }>);
@@ -166,21 +175,21 @@ export const matchError: {
  */
 export const matchErrorPartial: {
   <
-    E extends AnyTaggedError,
+    E extends TaggedErrorLike,
     R,
     const H extends PartialMatchHandlers<E, R> = PartialMatchHandlers<E, R>,
   >(
     handlers: H,
     fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>> }>) => R,
   ): (err: E) => R;
-  <E extends AnyTaggedError, R, const H extends PartialMatchHandlers<E, R>>(
+  <E extends TaggedErrorLike, R, const H extends PartialMatchHandlers<E, R>>(
     err: E,
     handlers: H,
     fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>> }>) => R,
   ): R;
 } = dual(
   3,
-  <E extends AnyTaggedError, R, H extends PartialMatchHandlers<E, R>>(
+  <E extends TaggedErrorLike, R, H extends PartialMatchHandlers<E, R>>(
     err: E,
     handlers: H,
     fallback: (e: Exclude<E, { _tag: HandledTags<E, H> }>) => R,
@@ -200,7 +209,7 @@ export const matchErrorPartial: {
  * Type guard for tagged error instances.
  *
  * @example
- * if (isTaggedError(value)) { value._tag }
+ * if (isTaggedError(value)) { value._tag; value.toJSON(); }
  */
 export const isTaggedError = isAnyTaggedError;
 

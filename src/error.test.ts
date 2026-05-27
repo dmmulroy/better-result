@@ -87,8 +87,25 @@ describe("TaggedError", () => {
       expect(isTaggedError(new NotFoundError({ id: "x", message: "not found" }))).toBe(true);
     });
 
+    it("narrows TaggedError to include toJSON", () => {
+      const error: unknown = new NotFoundError({ id: "x", message: "not found" });
+
+      if (isTaggedError(error)) {
+        const json: object = error.toJSON();
+        expect(json).toMatchObject({ _tag: "NotFoundError", id: "x", message: "not found" });
+        return;
+      }
+
+      throw new Error("Expected isTaggedError to narrow TaggedError");
+    });
+
     it("returns false for plain Error", () => {
       expect(isTaggedError(new Error())).toBe(false);
+    });
+
+    it("returns false for Error with _tag but no toJSON", () => {
+      const error = Object.assign(new Error("fake"), { _tag: "FakeError" });
+      expect(isTaggedError(error)).toBe(false);
     });
 
     it("returns false for non-errors", () => {
