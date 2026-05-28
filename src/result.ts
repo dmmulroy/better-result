@@ -1,5 +1,5 @@
 import { dual } from "./dual";
-import { ResultDeserializationError, UnhandledException } from "./error";
+import { ResultDeserializationError, ResultSerializationError, UnhandledException } from "./error";
 import { type StandardSchemaV1 } from "./standard-schema";
 import {
   Err,
@@ -538,7 +538,10 @@ export interface ResultCodec<
   serialize: (
     result: Result<StandardSchemaInput<TOkSerialize>, StandardSchemaInput<TErrSerialize>>,
   ) => MaybePromise<
-    SerializedResult<StandardSchemaOutput<TOkSerialize>, StandardSchemaOutput<TErrSerialize>>,
+    Result<
+      SerializedResult<StandardSchemaOutput<TOkSerialize>, StandardSchemaOutput<TErrSerialize>>,
+      ResultSerializationError
+    >,
     CodecSerializeIsAsync<TOkSerialize, TErrSerialize>
   >;
   deserialize: (
@@ -581,31 +584,28 @@ const validateStandardSchema = <TSchema extends StandardSchemaV1<any, any>>(
 };
 
 const unwrapSerializedValue = <TSchema extends StandardSchemaV1<any, any>>(
-  schema: TSchema,
   value: StandardSchemaInput<TSchema>,
   result: StandardSchemaV1.Result<StandardSchemaOutput<TSchema>>,
-): StandardSchemaOutput<TSchema> => {
+): Result<StandardSchemaOutput<TSchema>, ResultSerializationError> => {
   if ("issues" in result && result.issues) {
-    throw panic("Result.codec serialize schema rejected value", {
-      vendor: schema["~standard"].vendor,
-      value,
-      issues: result.issues,
-    });
+    return err(new ResultSerializationError({ value, issues: result.issues }));
   }
-  return result.value;
+  return ok(result.value);
 };
 
 const serializeWithSchema = <TSchema extends StandardSchemaV1<any, any>>(
   schema: TSchema,
   value: StandardSchemaInput<TSchema>,
-): StandardSchemaOutput<TSchema> | Promise<StandardSchemaOutput<TSchema>> => {
+):
+  | Result<StandardSchemaOutput<TSchema>, ResultSerializationError>
+  | Promise<Result<StandardSchemaOutput<TSchema>, ResultSerializationError>> => {
   const result = validateStandardSchema(schema, value, "Result.codec serialize schema threw");
   if (isPromiseLike(result)) {
     return Promise.resolve(result).then((resolved) =>
-      unwrapSerializedValue(schema, value, resolved),
+      unwrapSerializedValue<TSchema>(value, resolved),
     );
   }
-  return unwrapSerializedValue(schema, value, result);
+  return unwrapSerializedValue<TSchema>(value, result);
 };
 
 const unwrapDeserializedValue = <TSchema extends StandardSchemaV1<any, any>>(
@@ -645,15 +645,41 @@ const codec = <
     result: Result<StandardSchemaInput<TOkSerialize>, StandardSchemaInput<TErrSerialize>>,
   ) => {
     if (result.status === "ok") {
-      const value = serializeWithSchema(config.serialize.ok, result.value);
-      return isPromiseLike(value)
-        ? Promise.resolve(value).then((resolved) => ({ status: "ok" as const, value: resolved }))
-        : { status: "ok" as const, value };
+      const serialized = serializeWithSchema(config.serialize.ok, result.value);
+      const finish = (
+        resolved: Result<StandardSchemaOutput<TOkSerialize>, ResultSerializationError>,
+      ) =>
+        resolved.status === "ok"
+          ? ok({ status: "ok" as const, value: resolved.value })
+          : // SAFETY: Ok payload encode failed, widening Ok payload phantom type is safe.
+            (resolved as unknown as Err<
+              SerializedResult<
+                StandardSchemaOutput<TOkSerialize>,
+                StandardSchemaOutput<TErrSerialize>
+              >,
+              ResultSerializationError
+            >);
+      return isPromiseLike(serialized)
+        ? Promise.resolve(serialized).then(finish)
+        : finish(serialized);
     }
-    const error = serializeWithSchema(config.serialize.err, result.error);
-    return isPromiseLike(error)
-      ? Promise.resolve(error).then((resolved) => ({ status: "error" as const, error: resolved }))
-      : { status: "error" as const, error };
+    const serialized = serializeWithSchema(config.serialize.err, result.error);
+    const finish = (
+      resolved: Result<StandardSchemaOutput<TErrSerialize>, ResultSerializationError>,
+    ) =>
+      resolved.status === "ok"
+        ? ok({ status: "error" as const, error: resolved.value })
+        : // SAFETY: Err payload encode failed, widening Ok payload phantom type is safe.
+          (resolved as unknown as Err<
+            SerializedResult<
+              StandardSchemaOutput<TOkSerialize>,
+              StandardSchemaOutput<TErrSerialize>
+            >,
+            ResultSerializationError
+          >);
+    return isPromiseLike(serialized)
+      ? Promise.resolve(serialized).then(finish)
+      : finish(serialized);
   };
 
   const deserializeResult = (value: unknown) => {
@@ -965,7 +991,7 @@ export const Result = {
    * });
    *
    * const outbound = UserResultCodec.serialize(Result.ok(user));
-   * const inbound = UserResultCodec.deserialize(outbound);
+   * const inbound = outbound.andThen((wire) => UserResultCodec.deserialize(wire));
    */
   codec,
   /**

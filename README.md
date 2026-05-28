@@ -530,7 +530,13 @@ new NetworkError({ url: "/api", status: 404 });
 Build Result-level codecs for RPC, storage, or server actions with Standard Schema-compatible serializers/deserializers:
 
 ```ts
-import { Result, ResultDeserializationError, type SerializedResult } from "better-result";
+import {
+  Result,
+  ResultDeserializationError,
+  ResultSerializationError,
+  type SerializedResult,
+  type Result as ResultType,
+} from "better-result";
 
 const UserResultCodec = Result.codec({
   serialize: {
@@ -544,9 +550,13 @@ const UserResultCodec = Result.codec({
 });
 
 const outbound = UserResultCodec.serialize(Result.ok(user));
-// { status: "ok", value: ...wire payload... }
+// Ok({ status: "ok", value: ...wire payload... })
 
-const inbound = UserResultCodec.deserialize(outbound);
+if (Result.isError(outbound) && ResultSerializationError.is(outbound.error)) {
+  console.log("Bad output:", outbound.error.value, outbound.error.issues);
+}
+
+const inbound = outbound.andThen((wire) => UserResultCodec.deserialize(wire));
 // Ok(user)
 
 const invalid = UserResultCodec.deserialize({ foo: "bar" });
@@ -556,7 +566,7 @@ if (Result.isError(invalid) && ResultDeserializationError.is(invalid.error)) {
 
 async function createUser(
   data: FormData,
-): Promise<SerializedResult<UserWire, ValidationErrorWire>> {
+): Promise<ResultType<SerializedResult<UserWire, ValidationErrorWire>, ResultSerializationError>> {
   const result = await validateAndCreate(data);
   return UserResultCodec.serialize(result);
 }

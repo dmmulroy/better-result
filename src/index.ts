@@ -23,6 +23,7 @@ export {
   TaggedError,
   UnhandledException,
   ResultDeserializationError,
+  ResultSerializationError,
   matchError,
   matchErrorPartial,
   isTaggedError,
@@ -30,6 +31,7 @@ export {
 export type {
   AnyTaggedError,
   ResultDeserializationIssue,
+  ResultSerializationIssue,
   TaggedErrorInstance,
   TaggedErrorClass,
 } from "./error";

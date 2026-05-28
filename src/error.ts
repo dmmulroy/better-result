@@ -251,4 +251,33 @@ export class ResultDeserializationError extends TaggedError("ResultDeserializati
   }
 }
 
+/** Shape of issues returned by Standard Schema-compatible serializers. */
+export interface ResultSerializationIssue {
+  readonly message: string;
+  readonly path?: readonly unknown[];
+}
+
+/**
+ * Returned when Result codec serialization receives invalid input.
+ *
+ * @example
+ * const result = UserResultCodec.serialize(Result.ok(value));
+ * if (Result.isError(result) && ResultSerializationError.is(result.error)) {
+ *   console.log("Invalid output:", result.error.value);
+ * }
+ */
+export class ResultSerializationError extends TaggedError("ResultSerializationError")<{
+  message: string;
+  value: unknown;
+  issues?: readonly ResultSerializationIssue[];
+}>() {
+  constructor(args: { value: unknown; issues?: readonly ResultSerializationIssue[] }) {
+    super({
+      message: "Failed to serialize Result value",
+      value: args.value,
+      issues: args.issues,
+    });
+  }
+}
+
 export { Panic, isPanic, panic } from "./core";
