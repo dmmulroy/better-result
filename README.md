@@ -527,63 +527,85 @@ new NetworkError({ url: "/api", status: 404 });
 
 ## Serialization
 
-Convert Results to plain objects for RPC, storage, or server actions:
+Build Result-level codecs for RPC, storage, or server actions with Standard Schema-compatible serializers/deserializers:
 
 ```ts
-import { Result, SerializedResult, ResultDeserializationError } from "better-result";
+import { Result, ResultDeserializationError, type SerializedResult } from "better-result";
 
-// Serialize to plain object
-const result = Result.ok(42);
-const serialized = Result.serialize(result);
-// { status: "ok", value: 42 }
+const UserResultCodec = Result.codec({
+  serialize: {
+    ok: UserToWireSchema,
+    err: ValidationErrorToWireSchema,
+  },
+  deserialize: {
+    ok: WireToUserSchema,
+    err: WireToValidationErrorSchema,
+  },
+});
 
-// Deserialize back to Result instance
-const deserialized = Result.deserialize<number, never>(serialized);
-// Ok(42) - can use .map(), .andThen(), etc.
+const outbound = UserResultCodec.serialize(Result.ok(user));
+// { status: "ok", value: ...wire payload... }
 
-// Invalid input returns ResultDeserializationError
-const invalid = Result.deserialize({ foo: "bar" });
+const inbound = UserResultCodec.deserialize(outbound);
+// Ok(user)
+
+const invalid = UserResultCodec.deserialize({ foo: "bar" });
 if (Result.isError(invalid) && ResultDeserializationError.is(invalid.error)) {
-  console.log("Bad input:", invalid.error.value);
+  console.log("Bad input:", invalid.error.value, invalid.error.issues);
 }
 
-// Typed boundary for Next.js server actions
-async function createUser(data: FormData): Promise<SerializedResult<User, ValidationError>> {
+async function createUser(
+  data: FormData,
+): Promise<SerializedResult<UserWire, ValidationErrorWire>> {
   const result = await validateAndCreate(data);
-  return Result.serialize(result);
+  return UserResultCodec.serialize(result);
 }
+```
 
-// Client-side
-const serialized = await createUser(formData);
-const result = Result.deserialize<User, ValidationError>(serialized);
+### Migrating from `Result.serialize` / `Result.deserialize`
+
+`Result.serialize`, `Result.deserialize`, and `Result.hydrate` were removed in 3.0.
+
+Use a codec instead:
+
+```ts
+const LegacyLikeCodec = Result.codec({
+  serialize: {
+    ok: IdentityOkSchema,
+    err: IdentityErrSchema,
+  },
+  deserialize: {
+    ok: IdentityOkSchema,
+    err: IdentityErrSchema,
+  },
+});
 ```
 
 ## API Reference
 
 ### Result
 
-| Method                                  | Description                                                                              |
-| --------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `Result.ok(value)`                      | Create success                                                                           |
-| `Result.err(error)`                     | Create error                                                                             |
-| `Result.try(fn)`                        | Wrap throwing function                                                                   |
-| `Result.tryPromise(fn, config?)`        | Wrap async function with optional retry                                                  |
-| `Result.isOk(result)`                   | Type guard for Ok                                                                        |
-| `Result.isError(result)`                | Type guard for Err                                                                       |
-| `Result.gen(fn)`                        | Generator composition                                                                    |
-| `Result.tryRecover(result, fn)`         | Recover error into same success type                                                     |
-| `Result.tryRecoverAsync(result, fn)`    | Async recover error into same success type                                               |
-| `Result.tap(result, fn)`                | Run side effect on success and return original result                                    |
-| `Result.tapAsync(result, fn)`           | Run async side effect on success and return original result                              |
-| `Result.tapError(result, fn)`           | Run side effect on error and return original result                                      |
-| `Result.tapErrorAsync(result, fn)`      | Run async side effect on error and return original result                                |
-| `Result.tapBoth(result, handlers)`      | Run side effect on either branch and return original result                              |
-| `Result.tapBothAsync(result, handlers)` | Run async side effect on either branch and return original result                        |
-| `Result.await(promise)`                 | Wrap Promise<Result> for generators                                                      |
-| `Result.serialize(result)`              | Convert Result to plain object                                                           |
-| `Result.deserialize(value)`             | Rehydrate serialized Result (returns `Err<ResultDeserializationError>` on invalid input) |
-| `Result.partition(results)`             | Split array into [okValues, errValues]                                                   |
-| `Result.flatten(result)`                | Flatten nested Result                                                                    |
+| Method                                  | Description                                                                          |
+| --------------------------------------- | ------------------------------------------------------------------------------------ |
+| `Result.ok(value)`                      | Create success                                                                       |
+| `Result.err(error)`                     | Create error                                                                         |
+| `Result.try(fn)`                        | Wrap throwing function                                                               |
+| `Result.tryPromise(fn, config?)`        | Wrap async function with optional retry                                              |
+| `Result.isOk(result)`                   | Type guard for Ok                                                                    |
+| `Result.isError(result)`                | Type guard for Err                                                                   |
+| `Result.gen(fn)`                        | Generator composition                                                                |
+| `Result.tryRecover(result, fn)`         | Recover error into same success type                                                 |
+| `Result.tryRecoverAsync(result, fn)`    | Async recover error into same success type                                           |
+| `Result.tap(result, fn)`                | Run side effect on success and return original result                                |
+| `Result.tapAsync(result, fn)`           | Run async side effect on success and return original result                          |
+| `Result.tapError(result, fn)`           | Run side effect on error and return original result                                  |
+| `Result.tapErrorAsync(result, fn)`      | Run async side effect on error and return original result                            |
+| `Result.tapBoth(result, handlers)`      | Run side effect on either branch and return original result                          |
+| `Result.tapBothAsync(result, handlers)` | Run async side effect on either branch and return original result                    |
+| `Result.await(promise)`                 | Wrap Promise<Result> for generators                                                  |
+| `Result.codec(config)`                  | Build a Result-level codec from Standard Schema-compatible serializers/deserializers |
+| `Result.partition(results)`             | Split array into [okValues, errValues]                                               |
+| `Result.flatten(result)`                | Flatten nested Result                                                                |
 
 ### Instance Methods
 

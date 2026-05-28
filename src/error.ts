@@ -222,11 +222,17 @@ export class UnhandledException extends TaggedError("UnhandledException")<{
   }
 }
 
+/** Shape of issues returned by Standard Schema-compatible validators. */
+export interface ResultDeserializationIssue {
+  readonly message: string;
+  readonly path?: readonly unknown[];
+}
+
 /**
- * Returned when Result.deserialize receives invalid input.
+ * Returned when Result codec deserialization receives invalid input.
  *
  * @example
- * const result = Result.deserialize(invalidData);
+ * const result = UserResultCodec.deserialize(invalidData);
  * if (Result.isError(result) && ResultDeserializationError.is(result.error)) {
  *   console.log("Invalid input:", result.error.value);
  * }
@@ -234,11 +240,13 @@ export class UnhandledException extends TaggedError("UnhandledException")<{
 export class ResultDeserializationError extends TaggedError("ResultDeserializationError")<{
   message: string;
   value: unknown;
+  issues?: readonly ResultDeserializationIssue[];
 }> {
-  constructor(args: { value: unknown }) {
+  constructor(args: { value: unknown; issues?: readonly ResultDeserializationIssue[] }) {
     super({
       message: `Failed to deserialize value as Result: expected { status: "ok", value } or { status: "error", error }`,
       value: args.value,
+      issues: args.issues,
     });
   }
 }
