@@ -66,9 +66,13 @@ async function npmMetadata(name) {
 function checkoutRepo(meta, key) {
   if (!meta.repo || !meta.repo.includes("github.com")) return undefined;
   const dir = join(root, `repo-${sanitize(key)}`);
-  const clone = run("git", ["clone", "--filter=blob:none", "--no-checkout", `${meta.repo}.git`, dir], {
-    capture: true,
-  });
+  const clone = run(
+    "git",
+    ["clone", "--filter=blob:none", "--no-checkout", `${meta.repo}.git`, dir],
+    {
+      capture: true,
+    },
+  );
   if (clone.status !== 0) return undefined;
   const target = meta.gitHead ?? "HEAD";
   const fetch = run("git", ["fetch", "--depth=1", "origin", target], { cwd: dir, capture: true });
