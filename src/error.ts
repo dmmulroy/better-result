@@ -121,13 +121,23 @@ export type TaggedErrorClass<Tag extends string> = {
   is<C extends TaggedErrorConstructor>(this: C, value: unknown): value is InstanceType<C>;
 };
 
-/** Handler map for exhaustive matching */
-type MatchHandlers<E extends TaggedErrorLike, R> = {
+/** Handler map for exhaustive matching (returns inferred per-handler) */
+type MatchHandlers<E extends AnyTaggedError> = {
+  [K in E["_tag"]]: (err: Extract<E, { _tag: K }>) => unknown;
+};
+
+/** Handler map constraining every handler to return `R` */
+type MatchHandlersWithReturn<E extends AnyTaggedError, R> = {
   [K in E["_tag"]]: (err: Extract<E, { _tag: K }>) => R;
 };
 
+/** Union of every handler's return type */
+type MatchReturn<H> = {
+  [K in keyof H]: H[K] extends (err: never) => infer R ? R : never;
+}[keyof H];
+
 /** Partial handler map for non-exhaustive matching */
-type PartialMatchHandlers<E extends TaggedErrorLike, R> = Partial<MatchHandlers<E, R>>;
+type PartialMatchHandlers<E extends AnyTaggedError, R> = Partial<MatchHandlersWithReturn<E, R>>;
 
 /** Extract handled tags from a handlers object */
 type HandledTags<E extends TaggedErrorLike, H> = Extract<keyof H, E["_tag"]>;
@@ -149,11 +159,19 @@ type HandledTags<E extends TaggedErrorLike, H> = Extract<keyof H, E["_tag"]>;
  * }));
  */
 export const matchError: {
-  <E extends TaggedErrorLike, R>(handlers: MatchHandlers<E, R>): (err: E) => R;
-  <E extends TaggedErrorLike, R>(err: E, handlers: MatchHandlers<E, R>): R;
-} = dual(2, <E extends TaggedErrorLike, R>(err: E, handlers: MatchHandlers<E, R>): R => {
+  /** Data-last, E deferred to application; returns the union of handler returns */
+  <H extends MatchHandlers<AnyTaggedError>>(
+    handlers: H,
+  ): <E extends AnyTaggedError & { _tag: keyof H }>(err: E) => MatchReturn<H>;
+  /** Data-last with explicit E, R constraining every handler return */
+  <E extends AnyTaggedError, R>(handlers: MatchHandlersWithReturn<E, R>): (err: E) => R;
+  /** Data-first, inferred; returns the union of handler returns */
+  <E extends AnyTaggedError, H extends MatchHandlers<E>>(err: E, handlers: H): MatchReturn<H>;
+  /** Data-first with explicit R constraining every handler return */
+  <E extends AnyTaggedError, R>(err: E, handlers: MatchHandlersWithReturn<E, R>): R;
+} = dual(2, <E extends AnyTaggedError>(err: E, handlers: MatchHandlers<E>): unknown => {
   const handler = handlers[err._tag as E["_tag"]];
-  // SAFETY: handler exists if handlers satisfies MatchHandlers<E, R>
+  // SAFETY: exhaustiveness is enforced at the type level
   return handler(err as Extract<E, { _tag: (typeof err)["_tag"] }>);
 });
 
@@ -166,34 +184,50 @@ export const matchError: {
  * }, (e) => `Unknown: ${e.message}`);
  */
 export const matchErrorPartial: {
+  /** Pipeable — E deferred to call site, fallback receives AnyTaggedError */
+  <H extends Partial<MatchHandlers<AnyTaggedError>>, R>(
+    handlers: H,
+    fallback: (e: AnyTaggedError) => R,
+  ): {
+    <E extends AnyTaggedError>(err: E): MatchReturn<H> | R;
+  };
+  /** Pipeable with explicit E, R — H inferred via default, fallback narrowed */
   <
-    E extends TaggedErrorLike,
+E extends AnyTaggedError,
     R,
     const H extends PartialMatchHandlers<E, R> = PartialMatchHandlers<E, R>,
   >(
     handlers: H,
     fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>> }>) => R,
   ): (err: E) => R;
-  <E extends TaggedErrorLike, R, const H extends PartialMatchHandlers<E, R>>(
+  /** Data-first with inference — E from err, H from handlers, R from fallback */
+  <E extends AnyTaggedError, const H extends Partial<MatchHandlers<E>>, R>(
+    err: E,
+    handlers: H,
+    fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>> }>) => R,
+  ): MatchReturn<H> | R;
+  /** Data-first with explicit R — H inferred via default, fallback narrowed */
+  <
+    E extends AnyTaggedError,
+    R,
+    const H extends PartialMatchHandlers<E, R> = PartialMatchHandlers<E, R>,
+  >(
     err: E,
     handlers: H,
     fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>> }>) => R,
   ): R;
 } = dual(
   3,
-  <E extends TaggedErrorLike, R, H extends PartialMatchHandlers<E, R>>(
-    err: E,
-    handlers: H,
-    fallback: (e: Exclude<E, { _tag: HandledTags<E, H> }>) => R,
-  ): R => {
-    type K = HandledTags<E, H>;
-    const handler = handlers[err._tag as K];
+(
+    err: AnyTaggedError,
+    handlers: Partial<MatchHandlers<AnyTaggedError>>,
+    fallback: (e: AnyTaggedError) => unknown,
+  ): unknown => {
+    const handler = handlers[err._tag];
     if (typeof handler === "function") {
-      // SAFETY: handler exists and matches the tag
-      return handler(err as Parameters<NonNullable<typeof handler>>[0]);
+      return handler(err);
     }
-    // SAFETY: If no handler matched, err is in the Exclude type
-    return fallback(err as Exclude<E, { _tag: K }>);
+    return fallback(err);
   },
 );
 
