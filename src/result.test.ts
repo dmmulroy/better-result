@@ -1685,8 +1685,8 @@ describe("Result", () => {
         { foo: "bar" },
         null,
         42,
-        { status: "ok" }, // missing value
-        { status: "error" }, // missing error
+        { status: "nope" }, // invalid status
+        { value: 42 }, // missing status
       ];
 
       for (const input of testCases) {
@@ -1697,6 +1697,33 @@ describe("Result", () => {
           expect((result.error as ResultDeserializationError).value).toBe(input);
         }
       }
+    });
+
+    it("deserializes a missing value key as Ok<undefined>", () => {
+      // JSON transports drop undefined-valued keys, so a serialized
+      // Ok<void> arrives as `{ status: "ok" }` without a value key
+      const result = Result.deserialize<undefined, never>({ status: "ok" });
+      expect(result).toBeInstanceOf(Ok);
+      expect(result.unwrap()).toBe(undefined);
+    });
+
+    it("deserializes a missing error key as Err<undefined>", () => {
+      const result = Result.deserialize<never, undefined>({ status: "error" });
+      expect(result).toBeInstanceOf(Err);
+      if (Result.isError(result)) {
+        expect(result.error).toBe(undefined);
+      }
+    });
+
+    it("excludes ResultDeserializationError when input is a typed SerializedResult", () => {
+      const serialized = Result.serialize(Result.ok<number, string>(42));
+      const result = Result.deserialize(serialized);
+      expectTypeOf(result).toEqualTypeOf<Result<number, string>>();
+      expect(result.unwrap()).toBe(42);
+
+      const untyped: unknown = serialized;
+      const guarded = Result.deserialize<number, string>(untyped);
+      expectTypeOf(guarded).toEqualTypeOf<Result<number, string | ResultDeserializationError>>();
     });
 
     it("deserializes complex values", () => {
@@ -1734,6 +1761,17 @@ describe("Result", () => {
       const deserialized = Result.deserialize<{ id: number; data: number[] }, never>(parsed);
 
       expect(deserialized?.unwrap()).toEqual({ id: 1, data: [1, 2, 3] });
+    });
+
+    it("roundtrips Ok<void> through JSON.stringify/parse", () => {
+      // JSON.stringify drops the undefined-valued `value` key entirely,
+      // so this arrives as `{"status":"ok"}` on the other side
+      const json = JSON.stringify(Result.serialize(Result.ok()));
+      expect(json).toBe('{"status":"ok"}');
+
+      const deserialized = Result.deserialize<void, never>(JSON.parse(json));
+      expect(deserialized).toBeInstanceOf(Ok);
+      expect(deserialized.unwrap()).toBe(undefined);
     });
   });
 

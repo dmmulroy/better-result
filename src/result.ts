@@ -446,11 +446,15 @@ export interface SerializedErr<E> {
 export type SerializedResult<T, E> = SerializedOk<T> | SerializedErr<E>;
 
 function isSerializedResult(obj: unknown): obj is SerializedResult<unknown, unknown> {
+  // The `value`/`error` keys are intentionally not required.
+  // JSON transports drop keys whose value is `undefined` (JSON.stringify omits them, and JSON.parse revivers delete them),
+  // so a serialized Ok<void> arrives as `{ status: "ok" }`.
+  // A missing key deserializes as `undefined`.
   return (
     obj !== null &&
     typeof obj === "object" &&
     "status" in obj &&
-    ((obj.status === "ok" && "value" in obj) || (obj.status === "error" && "error" in obj))
+    (obj.status === "ok" || obj.status === "error")
   );
 }
 
@@ -460,14 +464,16 @@ const serialize = <T, E>(result: Result<T, E>): SerializedResult<T, E> => {
     : { status: "error", error: result.error };
 };
 
-const deserialize = <T, E>(value: unknown): Result<T, E | ResultDeserializationError> => {
+function deserialize<T, E>(value: SerializedResult<T, E>): Result<T, E>;
+function deserialize<T, E>(value: unknown): Result<T, E | ResultDeserializationError>;
+function deserialize<T, E>(value: unknown): Result<T, E | ResultDeserializationError> {
   if (isSerializedResult(value)) {
     return value.status === "ok"
-      ? (new Ok(value.value) as Result<T, E>)
-      : (new Err(value.error) as Result<T, E>);
+      ? (new Ok((value as SerializedOk<T>).value) as Result<T, E>)
+      : (new Err((value as SerializedErr<E>).error) as Result<T, E>);
   }
   return err(new ResultDeserializationError({ value }));
-};
+}
 
 /**
  * @deprecated Use `Result.deserialize` instead. Will be removed in 3.0.
