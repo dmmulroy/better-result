@@ -448,6 +448,58 @@ describe("Result", () => {
       expect(Result.isError(result)).toBe(true);
     });
 
+    it("does not retry when the signal is already aborted", async () => {
+      const controller = new AbortController();
+      controller.abort();
+      let attempts = 0;
+
+      const result = await Result.tryPromise(
+        () => {
+          attempts++;
+          return Promise.reject(new Error("fail"));
+        },
+        {
+          retry: {
+            times: 3,
+            delayMs: 1,
+            backoff: "constant",
+            signal: controller.signal,
+          },
+        },
+      );
+
+      expect(Result.isError(result)).toBe(true);
+      expect(attempts).toBe(1);
+    });
+
+    it("interrupts a pending retry delay when the signal is aborted", async () => {
+      const controller = new AbortController();
+      let attempts = 0;
+      const start = Date.now();
+
+      const pending = Result.tryPromise(
+        () => {
+          attempts++;
+          return Promise.reject(new Error("fail"));
+        },
+        {
+          retry: {
+            times: 3,
+            delayMs: 10_000,
+            backoff: "constant",
+            signal: controller.signal,
+          },
+        },
+      );
+
+      setTimeout(() => controller.abort(), 10);
+      const result = await pending;
+
+      expect(Result.isError(result)).toBe(true);
+      expect(attempts).toBe(1);
+      expect(Date.now() - start).toBeLessThan(500);
+    });
+
     it("throws Panic when shouldRetry predicate throws", async () => {
       await expect(
         Result.tryPromise(

@@ -95,6 +95,8 @@ type RetryConfig<E = unknown> = {
     backoff: "linear" | "constant" | "exponential";
     /** Predicate to determine if an error should trigger a retry. Defaults to always retry. */
     shouldRetry?: (error: E) => boolean;
+    /** Stops a pending delay and prevents further retry attempts when aborted. */
+    signal?: AbortSignal;
   };
 };
 
@@ -153,7 +155,24 @@ const tryPromise: {
     }
   };
 
-  const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+  const sleep = (ms: number, signal?: AbortSignal): Promise<boolean> =>
+    new Promise((resolve) => {
+      if (signal?.aborted) {
+        resolve(false);
+        return;
+      }
+
+      const onAbort = () => {
+        clearTimeout(timeout);
+        resolve(false);
+      };
+      const timeout = setTimeout(() => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve(true);
+      }, ms);
+
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
 
   let attempt = 1;
   let result = await execute({ attempt });
@@ -162,10 +181,12 @@ const tryPromise: {
 
   for (let retryAttempt = 0; retryAttempt < retry.times; retryAttempt++) {
     if (result.status !== "error") break;
+    if (retry.signal?.aborted) break;
     const error = result.error;
     const shouldContinue = tryOrPanic(() => shouldRetryFn(error), "shouldRetry predicate threw");
     if (!shouldContinue) break;
-    await sleep(getDelay(retryAttempt));
+    const delayCompleted = await sleep(getDelay(retryAttempt), retry.signal);
+    if (!delayCompleted || retry.signal?.aborted) break;
     attempt++;
     result = await execute({ attempt });
   }

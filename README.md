@@ -266,6 +266,26 @@ const result = await Result.tryPromise(({ attempt }) => fetchWithRetryContext(ur
 });
 ```
 
+### Cancelling Retries
+
+Pass an `AbortSignal` to stop a pending delay and prevent later retry attempts:
+
+```ts
+const controller = new AbortController();
+
+const result = await Result.tryPromise(() => fetch(url, { signal: controller.signal }), {
+  retry: {
+    times: 3,
+    delayMs: 100,
+    backoff: "exponential",
+    signal: controller.signal,
+  },
+});
+```
+
+The signal only controls retry scheduling. Pass it to the operation as well when the current attempt
+must also be cancelled.
+
 ### Conditional Retry
 
 Retry only for specific error types using `shouldRetry`:
