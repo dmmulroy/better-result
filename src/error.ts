@@ -1,5 +1,6 @@
 import { dual } from "./dual";
 import { err, panic, type Err } from "./core";
+import { type StandardSchemaV1 } from "./standard-schema";
 
 /** Serialize cause for JSON output */
 const serializeCause = (cause: unknown): unknown => {
@@ -222,14 +223,11 @@ export class UnhandledException extends TaggedError("UnhandledException")<{
   }
 }
 
-/** Shape of issues returned by Standard Schema-compatible validators. */
-export interface ResultDeserializationIssue {
-  readonly message: string;
-  readonly path?: readonly unknown[];
-}
+/** A Standard Schema validation issue reported while encoding or decoding a Result payload. */
+export type ResultCodecIssue = StandardSchemaV1.Issue;
 
 /**
- * Returned when Result codec deserialization receives invalid input.
+ * Returned when Result codec deserialization receives an invalid envelope or payload.
  *
  * @example
  * const result = UserResultCodec.deserialize(invalidData);
@@ -240,25 +238,21 @@ export interface ResultDeserializationIssue {
 export class ResultDeserializationError extends TaggedError("ResultDeserializationError")<{
   message: string;
   value: unknown;
-  issues?: readonly ResultDeserializationIssue[];
+  issues?: ReadonlyArray<ResultCodecIssue>;
 }> {
-  constructor(args: { value: unknown; issues?: readonly ResultDeserializationIssue[] }) {
+  constructor(args: { value: unknown; issues?: ReadonlyArray<ResultCodecIssue> }) {
     super({
-      message: `Failed to deserialize value as Result: expected { status: "ok", value } or { status: "error", error }`,
+      message: args.issues
+        ? "Failed to deserialize Result payload"
+        : `Failed to deserialize value as Result: expected { status: "ok", value } or { status: "error", error }`,
       value: args.value,
       issues: args.issues,
     });
   }
 }
 
-/** Shape of issues returned by Standard Schema-compatible serializers. */
-export interface ResultSerializationIssue {
-  readonly message: string;
-  readonly path?: readonly unknown[];
-}
-
 /**
- * Returned when Result codec serialization receives invalid input.
+ * Returned when a Result codec cannot serialize an Ok or Err payload.
  *
  * @example
  * const result = UserResultCodec.serialize(Result.ok(value));
@@ -269,11 +263,11 @@ export interface ResultSerializationIssue {
 export class ResultSerializationError extends TaggedError("ResultSerializationError")<{
   message: string;
   value: unknown;
-  issues?: readonly ResultSerializationIssue[];
-}>() {
-  constructor(args: { value: unknown; issues?: readonly ResultSerializationIssue[] }) {
+  issues?: ReadonlyArray<ResultCodecIssue>;
+}> {
+  constructor(args: { value: unknown; issues?: ReadonlyArray<ResultCodecIssue> }) {
     super({
-      message: "Failed to serialize Result value",
+      message: "Failed to serialize Result payload",
       value: args.value,
       issues: args.issues,
     });

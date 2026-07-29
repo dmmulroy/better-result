@@ -30,8 +30,7 @@ export {
 } from "./error";
 export type {
   AnyTaggedError,
-  ResultDeserializationIssue,
-  ResultSerializationIssue,
+  ResultCodecIssue,
   TaggedErrorInstance,
   TaggedErrorClass,
 } from "./error";

@@ -527,41 +527,79 @@ new NetworkError({ url: "/api", status: 404 });
 
 ## Serialization
 
-Build Result-level codecs for RPC, storage, or server actions with Standard Schema-compatible serializers/deserializers:
+Build Result-level codecs for RPC, storage, or server actions with Standard Schema-compatible schemas. This example uses Zod, but any Standard Schema implementation works:
 
 ```ts
+import { z } from "zod";
 import {
   Result,
   ResultDeserializationError,
   ResultSerializationError,
-  type SerializedResult,
   type Result as ResultType,
+  type SerializedResult,
 } from "better-result";
+
+const UserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  createdAt: z.date(),
+});
+const UserWireSchema = z.object({
+  id: z.string(),
+  display_name: z.string(),
+  created_at_iso: z.string(),
+});
+const ValidationErrorSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+});
+const ValidationErrorWireSchema = z.object({
+  type: z.string(),
+  message: z.string(),
+});
+type UserWire = z.output<typeof UserWireSchema>;
+type ValidationErrorWire = z.output<typeof ValidationErrorWireSchema>;
 
 const UserResultCodec = Result.codec({
   serialize: {
-    ok: UserToWireSchema,
-    err: ValidationErrorToWireSchema,
+    ok: UserSchema.transform((user) => ({
+      id: user.id,
+      display_name: user.name,
+      created_at_iso: user.createdAt.toISOString(),
+    })),
+    err: ValidationErrorSchema.transform((error) => ({
+      type: error.code,
+      message: error.message,
+    })),
   },
   deserialize: {
-    ok: WireToUserSchema,
-    err: WireToValidationErrorSchema,
+    ok: UserWireSchema.transform((wire) => ({
+      id: wire.id,
+      name: wire.display_name,
+      createdAt: new Date(wire.created_at_iso),
+    })),
+    err: ValidationErrorWireSchema.transform((wire) => ({
+      code: wire.type,
+      message: wire.message,
+    })),
   },
 });
 
-const outbound = UserResultCodec.serialize(Result.ok(user));
-// Ok({ status: "ok", value: ...wire payload... })
+const outbound = await UserResultCodec.serialize(Result.ok(user));
+// Ok({ status: "ok", value: { id, display_name, created_at_iso } })
 
 if (Result.isError(outbound) && ResultSerializationError.is(outbound.error)) {
-  console.log("Bad output:", outbound.error.value, outbound.error.issues);
+  console.log("Bad payload:", outbound.error.value, outbound.error.issues);
 }
 
-const inbound = outbound.andThen((wire) => UserResultCodec.deserialize(wire));
+const inbound = await outbound.andThenAsync(async (wire) => {
+  return await UserResultCodec.deserialize(wire);
+});
 // Ok(user)
 
-const invalid = UserResultCodec.deserialize({ foo: "bar" });
+const invalid = await UserResultCodec.deserialize({ foo: "bar" });
 if (Result.isError(invalid) && ResultDeserializationError.is(invalid.error)) {
-  console.log("Bad input:", invalid.error.value, invalid.error.issues);
+  console.log("Bad envelope or payload:", invalid.error.value, invalid.error.issues);
 }
 
 async function createUser(
@@ -572,24 +610,59 @@ async function createUser(
 }
 ```
 
-### Migrating from `Result.serialize` / `Result.deserialize`
+### Synchronous and asynchronous schemas
 
-`Result.serialize`, `Result.deserialize`, and `Result.hydrate` were removed in 3.0.
-
-Use a codec instead:
+Serialization and deserialization infer their return types independently. Within either direction, the selected `ok` or `err` schema determines whether a concrete branch returns a `Result` or a `Promise<Result>`—no runtime mode configuration is needed.
 
 ```ts
-const LegacyLikeCodec = Result.codec({
-  serialize: {
-    ok: IdentityOkSchema,
-    err: IdentityErrSchema,
-  },
-  deserialize: {
-    ok: IdentityOkSchema,
-    err: IdentityErrSchema,
-  },
-});
+const serializedOk = MixedCodec.serialize(Result.ok(user)); // Result when serialize.ok is sync
+const serializedErr = MixedCodec.serialize(Result.err(error)); // Promise<Result> when serialize.err is async
+
+const deserializedOk = MixedCodec.deserialize({ status: "ok", value: userWire });
+const deserializedErr = MixedCodec.deserialize({ status: "error", error: errorWire });
 ```
+
+When the input's branch is not statically known, mixed schemas honestly return `Result | Promise<Result>`. An `unknown` deserialization input also includes the synchronous `Result` case because an invalid outer envelope fails before a payload schema runs. `await` accepts both forms when callers want one control flow:
+
+```ts
+const decoded = await MixedCodec.deserialize(inputFromNetwork);
+```
+
+Schema validation issues are returned as `ResultSerializationError` or `ResultDeserializationError`. A schema that throws or returns a rejected Promise is a defect: the codec throws or rejects with `Panic` and preserves the original error as `cause`.
+
+### Migrating from `Result.serialize` / `Result.deserialize`
+
+`Result.serialize`, `Result.deserialize`, and `Result.hydrate` were removed in 3.0. The old helpers copied payloads without validating them:
+
+```ts
+// Before 3.0
+const wire = Result.serialize(result); // SerializedResult<User, ValidationError>
+const resultOrNull = Result.deserialize<User, ValidationError>(input); // Result | null
+```
+
+Create a codec once and let its schemas infer the payload types. For already serializable payloads, use the same validating schemas in both directions:
+
+```ts
+// 3.0
+const LegacyLikeCodec = Result.codec({
+  serialize: { ok: UserWireSchema, err: ValidationErrorWireSchema },
+  deserialize: { ok: UserWireSchema, err: ValidationErrorWireSchema },
+});
+
+const wirePayloadResult = Result.ok(userWire);
+const wireResult = await LegacyLikeCodec.serialize(wirePayloadResult);
+// Result<SerializedResult<UserWire, ValidationErrorWire>, ResultSerializationError>
+
+const decoded = await LegacyLikeCodec.deserialize(input);
+// Result<UserWire, ValidationErrorWire | ResultDeserializationError>
+```
+
+Migration differences:
+
+- Handle `ResultSerializationError` instead of assuming serialization always succeeds.
+- Handle `ResultDeserializationError` instead of checking for `null`; its `issues` preserve schema diagnostics when a payload is invalid.
+- Remove explicit `<User, ValidationError>` deserialization type arguments. The schemas provide those types.
+- Use `await` when a schema is async or when a schema library exposes a sync-or-async Standard Schema validator type.
 
 ## API Reference
 

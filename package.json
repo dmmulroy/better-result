@@ -47,6 +47,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "fast-check": "^4.9.0",
     "oxfmt": "^0.23.0",
     "oxlint": "^1.38.0",
     "tsdown": "^0.19.0-beta.5",

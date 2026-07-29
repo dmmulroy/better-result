@@ -1,3 +1,4 @@
+import fc from "fast-check";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   Result,
@@ -2140,6 +2141,7 @@ describe("Result", () => {
       const result = RejectingOkCodec.serialize(Result.ok({ createdAt: "nope" }));
       expect(Result.isError(result)).toBe(true);
       if (Result.isError(result) && ResultSerializationError.is(result.error)) {
+        expect(result.error.message).toBe("Failed to serialize Result payload");
         expect(result.error.value).toEqual({ createdAt: "nope" });
         expect(result.error.issues).toEqual([
           { message: "Expected serializable user", path: ["createdAt"] },
@@ -2206,6 +2208,9 @@ describe("Result", () => {
       const result = UserResultCodec.deserialize({ foo: "bar" });
       expect(Result.isError(result)).toBe(true);
       if (Result.isError(result) && ResultDeserializationError.is(result.error)) {
+        expect(result.error.message).toBe(
+          'Failed to deserialize value as Result: expected { status: "ok", value } or { status: "error", error }',
+        );
         expect(result.error.value).toEqual({ foo: "bar" });
       }
     });
@@ -2217,6 +2222,7 @@ describe("Result", () => {
       });
       expect(Result.isError(result)).toBe(true);
       if (Result.isError(result) && ResultDeserializationError.is(result.error)) {
+        expect(result.error.message).toBe("Failed to deserialize Result payload");
         expect(result.error.issues).toEqual([
           { message: "Expected string", path: ["display_name"] },
         ]);
@@ -2254,6 +2260,41 @@ describe("Result", () => {
         name: "Ada",
         createdAt: new Date("2026-05-28T12:00:00.000Z"),
       });
+    });
+
+    it("roundtrips arbitrary Ok and Err payloads through JSON", () => {
+      fc.assert(
+        fc.property(
+          fc.record({
+            id: fc.string(),
+            name: fc.string(),
+            createdAt: fc.date({ noInvalidDate: true }),
+          }),
+          (user) => {
+            const serialized = UserResultCodec.serialize(Result.ok(user)).unwrap();
+            const deserialized = UserResultCodec.deserialize(
+              JSON.parse(JSON.stringify(serialized)),
+            );
+            expect(deserialized).toEqual(Result.ok(user));
+          },
+        ),
+      );
+      fc.assert(
+        fc.property(
+          fc.record({
+            code: fc.constantFrom("NOT_FOUND" as const, "BAD_INPUT" as const),
+            message: fc.string(),
+            retryable: fc.boolean(),
+          }),
+          (appError) => {
+            const serialized = UserResultCodec.serialize(Result.err(appError)).unwrap();
+            const deserialized = UserResultCodec.deserialize(
+              JSON.parse(JSON.stringify(serialized)),
+            );
+            expect(deserialized).toEqual(Result.err(appError));
+          },
+        ),
+      );
     });
 
     it("supports async Standard Schema validators and infers Promise return types", async () => {
@@ -2311,6 +2352,181 @@ describe("Result", () => {
       await expect(deserialized).resolves.toBeInstanceOf(Ok);
     });
 
+    it("infers serialization and deserialization async behavior independently", async () => {
+      const SyncSerializeAsyncDeserializeCodec = Result.codec({
+        serialize: {
+          ok: identitySchema<string>("sync-ok-serializer"),
+          err: identitySchema<number>("sync-err-serializer"),
+        },
+        deserialize: {
+          ok: makeAsyncSchema<unknown, string>("async-ok-deserializer", async (value) => ({
+            value: String(value),
+          })),
+          err: makeAsyncSchema<unknown, number>("async-err-deserializer", async (value) => ({
+            value: Number(value),
+          })),
+        },
+      });
+      const AsyncSerializeSyncDeserializeCodec = Result.codec({
+        serialize: {
+          ok: makeAsyncSchema<string, string>("async-ok-serializer", async (value) => ({
+            value: String(value),
+          })),
+          err: makeAsyncSchema<number, number>("async-err-serializer", async (value) => ({
+            value: Number(value),
+          })),
+        },
+        deserialize: {
+          ok: identitySchema<string>("sync-ok-deserializer"),
+          err: identitySchema<number>("sync-err-deserializer"),
+        },
+      });
+
+      const syncSerialized = SyncSerializeAsyncDeserializeCodec.serialize(Result.ok("value"));
+      const asyncDeserialized = SyncSerializeAsyncDeserializeCodec.deserialize({
+        status: "ok",
+        value: "value",
+      });
+      const asyncSerialized = AsyncSerializeSyncDeserializeCodec.serialize(Result.err(42));
+      const syncDeserialized = AsyncSerializeSyncDeserializeCodec.deserialize({
+        status: "error",
+        error: 42,
+      });
+
+      expectTypeOf(syncSerialized).toEqualTypeOf<
+        ResultType<SerializedResult<string, number>, ResultSerializationError>
+      >();
+      expectTypeOf(asyncDeserialized).toEqualTypeOf<
+        Promise<ResultType<string, number | ResultDeserializationError>>
+      >();
+      expectTypeOf(asyncSerialized).toEqualTypeOf<
+        Promise<ResultType<SerializedResult<string, number>, ResultSerializationError>>
+      >();
+      expectTypeOf(syncDeserialized).toEqualTypeOf<
+        ResultType<string, number | ResultDeserializationError>
+      >();
+      expect(syncSerialized).toEqual(Result.ok({ status: "ok", value: "value" }));
+      await expect(asyncDeserialized).resolves.toEqual(Result.ok("value"));
+      await expect(asyncSerialized).resolves.toEqual(Result.ok({ status: "error", error: 42 }));
+      expect(syncDeserialized).toEqual(Result.err(42));
+    });
+
+    it("infers mixed Result branches without runtime mode configuration", async () => {
+      const MixedBranchCodec = Result.codec({
+        serialize: {
+          ok: identitySchema<string>("sync-ok-serializer"),
+          err: makeAsyncSchema<number, number>("async-err-serializer", async (value) => ({
+            value: Number(value),
+          })),
+        },
+        deserialize: {
+          ok: identitySchema<string>("sync-ok-deserializer"),
+          err: makeAsyncSchema<unknown, number>("async-err-deserializer", async (value) => ({
+            value: Number(value),
+          })),
+        },
+      });
+      const getResult = (): ResultType<string, number> => Result.ok("value");
+      const unknownEnvelope: unknown = { status: "error", error: 42 };
+
+      const serializedOk = MixedBranchCodec.serialize(Result.ok("value"));
+      const serializedErr = MixedBranchCodec.serialize(Result.err(42));
+      const serializedUnknownBranch = MixedBranchCodec.serialize(getResult());
+      const deserializedOk = MixedBranchCodec.deserialize({ status: "ok", value: "value" });
+      const deserializedErr = MixedBranchCodec.deserialize({ status: "error", error: 42 });
+      const deserializedUnknownEnvelope = MixedBranchCodec.deserialize(unknownEnvelope);
+
+      type Serialized = ResultType<SerializedResult<string, number>, ResultSerializationError>;
+      type Deserialized = ResultType<string, number | ResultDeserializationError>;
+      expectTypeOf(serializedOk).toEqualTypeOf<Serialized>();
+      expectTypeOf(serializedErr).toEqualTypeOf<Promise<Serialized>>();
+      expectTypeOf(serializedUnknownBranch).toEqualTypeOf<Serialized | Promise<Serialized>>();
+      expectTypeOf(deserializedOk).toEqualTypeOf<Deserialized>();
+      expectTypeOf(deserializedErr).toEqualTypeOf<Promise<Deserialized>>();
+      expectTypeOf(deserializedUnknownEnvelope).toEqualTypeOf<
+        Deserialized | Promise<Deserialized>
+      >();
+      expect(serializedOk).toEqual(Result.ok({ status: "ok", value: "value" }));
+      await expect(serializedErr).resolves.toEqual(Result.ok({ status: "error", error: 42 }));
+      expect(deserializedOk).toEqual(Result.ok("value"));
+      await expect(deserializedErr).resolves.toEqual(Result.err(42));
+      await expect(deserializedUnknownEnvelope).resolves.toEqual(Result.err(42));
+    });
+
+    it("returns a synchronous envelope error even when payload schemas are async", () => {
+      const AsyncCodec = Result.codec({
+        serialize: {
+          ok: identitySchema<string>("sync-ok-serializer"),
+          err: identitySchema<number>("sync-err-serializer"),
+        },
+        deserialize: {
+          ok: makeAsyncSchema<unknown, string>("async-ok-deserializer", async (value) => ({
+            value: String(value),
+          })),
+          err: makeAsyncSchema<unknown, number>("async-err-deserializer", async (value) => ({
+            value: Number(value),
+          })),
+        },
+      });
+      const invalidEnvelope: unknown = { nope: true };
+
+      const result = AsyncCodec.deserialize(invalidEnvelope);
+
+      expectTypeOf(result).toEqualTypeOf<
+        | ResultType<string, number | ResultDeserializationError>
+        | Promise<ResultType<string, number | ResultDeserializationError>>
+      >();
+      expect(result).toBeInstanceOf(Err);
+    });
+
+    it("panics when an async serialization schema rejects", async () => {
+      const cause = new Error("async serialization failed");
+      const RejectingSerializationCodec = Result.codec({
+        serialize: {
+          ok: makeAsyncSchema<unknown, unknown>("rejecting-serializer", async () => {
+            throw cause;
+          }),
+          err: identitySchema<never>("identity-error-serializer"),
+        },
+        deserialize: {
+          ok: identitySchema<unknown>("identity-ok-deserializer"),
+          err: identitySchema<never>("identity-error-deserializer"),
+        },
+      });
+
+      await expect(RejectingSerializationCodec.serialize(Result.ok("value"))).rejects.toMatchObject(
+        {
+          _tag: "Panic",
+          message: "Result.codec serialize schema threw",
+          cause,
+        },
+      );
+    });
+
+    it("panics when an async deserialization schema rejects", async () => {
+      const cause = new Error("async deserialization failed");
+      const RejectingDeserializationCodec = Result.codec({
+        serialize: {
+          ok: identitySchema<unknown>("identity-ok-serializer"),
+          err: identitySchema<never>("identity-error-serializer"),
+        },
+        deserialize: {
+          ok: makeAsyncSchema<unknown, unknown>("rejecting-deserializer", async () => {
+            throw cause;
+          }),
+          err: identitySchema<never>("identity-error-deserializer"),
+        },
+      });
+
+      await expect(
+        RejectingDeserializationCodec.deserialize({ status: "ok", value: "value" }),
+      ).rejects.toMatchObject({
+        _tag: "Panic",
+        message: "Result.codec deserialize schema threw",
+        cause,
+      });
+    });
+
     it("preserves strong type inference for serialize and deserialize", () => {
       const outbound = UserResultCodec.serialize(
         Result.ok({ id: "1", name: "Ada", createdAt: new Date("2026-05-28T12:00:00.000Z") }),
@@ -2326,6 +2542,12 @@ describe("Result", () => {
       expectTypeOf(inbound).toEqualTypeOf<
         ResultType<User, AppError | ResultDeserializationError>
       >();
+
+      const serializeInvalidUser = (): void => {
+        // @ts-expect-error -- The Ok serializer requires the complete User input type.
+        UserResultCodec.serialize(Result.ok({ id: "missing-name-and-date" }));
+      };
+      expectTypeOf(serializeInvalidUser).toEqualTypeOf<() => void>();
     });
   });
 
