@@ -1,6 +1,20 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { Result, Ok, Err } from "./result";
+import { Result, Ok, Err, type TryContext, type TryPromiseContext } from "./result";
 import { Panic, ResultDeserializationError, UnhandledException } from "./error";
+
+const longConstantRetryConfig = {
+  times: 3,
+  delayMs: 10_000,
+  backoff: "constant",
+} as const;
+
+const createDeferred = () => {
+  let resolve = () => {};
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve } as const;
+};
 
 describe("Result", () => {
   describe("ok", () => {
@@ -303,6 +317,10 @@ describe("Result", () => {
 
     it("passes the configured abort signal to the try context without retries", async () => {
       const abortController = new AbortController();
+      type TryContextHasSignal = "signal" extends keyof TryContext ? true : false;
+
+      expectTypeOf<TryContextHasSignal>().toEqualTypeOf<false>();
+      expectTypeOf<TryPromiseContext["signal"]>().toEqualTypeOf<AbortSignal | undefined>();
 
       const result = await Result.tryPromise(
         ({ signal }) => {
@@ -374,11 +392,7 @@ describe("Result", () => {
         },
         {
           signal: abortController.signal,
-          retry: {
-            times: 3,
-            delayMs: 10_000,
-            backoff: "constant",
-          },
+          retry: longConstantRetryConfig,
         },
       );
 
@@ -437,10 +451,7 @@ describe("Result", () => {
     it("interrupts a pending retry delay when the abort signal is aborted", async () => {
       const abortController = new AbortController();
       let attempts = 0;
-      let approveRetry = () => {};
-      const retryApproved = new Promise<void>((resolve) => {
-        approveRetry = resolve;
-      });
+      const retryApproved = createDeferred();
 
       const pending = Result.tryPromise(
         () => {
@@ -450,18 +461,16 @@ describe("Result", () => {
         {
           signal: abortController.signal,
           retry: {
-            times: 3,
-            delayMs: 10_000,
-            backoff: "constant",
+            ...longConstantRetryConfig,
             shouldRetry: () => {
-              approveRetry();
+              retryApproved.resolve();
               return true;
             },
           },
         },
       );
 
-      await retryApproved;
+      await retryApproved.promise;
       abortController.abort();
       const result = await pending;
 
@@ -482,9 +491,7 @@ describe("Result", () => {
         {
           signal: abortController.signal,
           retry: {
-            times: 3,
-            delayMs: 10_000,
-            backoff: "constant",
+            ...longConstantRetryConfig,
             shouldRetry: (_error, { signal }) => {
               retryDecisions++;
               abortController.abort();
@@ -503,10 +510,7 @@ describe("Result", () => {
     it("returns the latest typed error when a later retry delay is interrupted", async () => {
       const abortController = new AbortController();
       let attempts = 0;
-      let observeSecondFailure = () => {};
-      const secondFailureObserved = new Promise<void>((resolve) => {
-        observeSecondFailure = resolve;
-      });
+      const secondFailureObserved = createDeferred();
 
       const pending = Result.tryPromise(
         () => {
@@ -520,14 +524,14 @@ describe("Result", () => {
             delayMs: 1,
             backoff: "constant",
             shouldRetry: (_error, { attempt }) => {
-              if (attempt === 2) observeSecondFailure();
+              if (attempt === 2) secondFailureObserved.resolve();
               return true;
             },
           },
         },
       );
 
-      await secondFailureObserved;
+      await secondFailureObserved.promise;
       abortController.abort();
       const result = await pending;
 

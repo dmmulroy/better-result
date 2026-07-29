@@ -19,11 +19,15 @@ export { Err, Ok } from "./core";
 export type { InferErr, InferOk } from "./core";
 export type Result<T, E> = import("./core").Result<T, E>;
 
-/** Context passed to each `Result.try` or `Result.tryPromise` attempt. */
+/** Context passed to each `Result.try` attempt. */
 export type TryContext = {
   /** One-based execution count, including the initial attempt. */
   readonly attempt: number;
-  /** Abort signal supplied to `Result.tryPromise`; absent for `Result.try`. */
+};
+
+/** Context passed to each `Result.tryPromise` attempt and retry decision. */
+export type TryPromiseContext = TryContext & {
+  /** Abort signal supplied through the top-level `Result.tryPromise` config. */
   readonly signal?: AbortSignal;
 };
 
@@ -100,29 +104,34 @@ type RetryConfig<E = unknown> = {
     delayMs: number;
     backoff: "linear" | "constant" | "exponential";
     /** Predicate to determine if an error should trigger a retry. Defaults to always retry. */
-    shouldRetry?: (error: E, context: TryContext) => boolean;
+    shouldRetry?: (error: E, context: TryPromiseContext) => boolean;
   };
 };
 
 const tryPromise: {
   <A, E>(
     options: {
-      try: (context: TryContext) => Promise<A>;
+      try: (context: TryPromiseContext) => Promise<A>;
       catch: (cause: unknown) => E | Promise<E>;
     },
     config?: RetryConfig<E>,
   ): Promise<Result<A, E>>;
   <A>(
-    thunk: (context: TryContext) => Promise<A>,
+    thunk: (context: TryPromiseContext) => Promise<A>,
     config?: RetryConfig<UnhandledException>,
   ): Promise<Result<A, UnhandledException>>;
 } = async <A, E>(
   options:
-    | ((context: TryContext) => Promise<A>)
-    | { try: (context: TryContext) => Promise<A>; catch: (cause: unknown) => E | Promise<E> },
+    | ((context: TryPromiseContext) => Promise<A>)
+    | {
+        try: (context: TryPromiseContext) => Promise<A>;
+        catch: (cause: unknown) => E | Promise<E>;
+      },
   config?: RetryConfig<E | UnhandledException>,
 ): Promise<Result<A, E | UnhandledException>> => {
-  const execute = async (context: TryContext): Promise<Result<A, E | UnhandledException>> => {
+  const execute = async (
+    context: TryPromiseContext,
+  ): Promise<Result<A, E | UnhandledException>> => {
     if (typeof options === "function") {
       try {
         return ok(await options(context));
@@ -178,7 +187,7 @@ const tryPromise: {
       signal?.addEventListener("abort", onAbort, { once: true });
     });
 
-  let context: TryContext = { attempt: 1, signal: config.signal };
+  let context: TryPromiseContext = { attempt: 1, signal: config.signal };
   let result = await execute(context);
 
   const shouldRetryFn = retry.shouldRetry ?? (() => true);

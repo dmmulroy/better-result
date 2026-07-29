@@ -6,6 +6,7 @@ export type {
   SerializedOk,
   SerializedErr,
   TryContext,
+  TryPromiseContext,
 } from "./result";
 export {
   Panic,
