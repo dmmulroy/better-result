@@ -26,6 +26,10 @@ class NetworkError extends TaggedError("NetworkError")<{
 
 type AppError = NotFoundError | ValidationError | NetworkError;
 
+class StructuralTaggedError extends Error {
+  readonly _tag = "StructuralTaggedError";
+}
+
 describe("TaggedError", () => {
   describe("construction", () => {
     it("sets name to tag", () => {
@@ -241,6 +245,39 @@ describe("TaggedError", () => {
       expect(matchAppError(error)).toBe("network: https://api.example.com");
     });
 
+    it("propagates an exception from the selected handler", () => {
+      const throwSelectedHandler = (error: AppError) =>
+        matchError(error, {
+          NotFoundError: (e) => `missing: ${e.id}`,
+          ValidationError: (e) => `invalid: ${e.field}`,
+          NetworkError: (e) => {
+            throw e;
+          },
+        });
+      const error = new NetworkError({
+        url: "https://api.example.com",
+        message: "failed",
+      });
+
+      let thrown: unknown;
+      try {
+        throwSelectedHandler(error);
+      } catch (cause) {
+        thrown = cause;
+      }
+
+      expect(thrown).toBe(error);
+    });
+
+    it("matches structurally tagged errors without requiring TaggedError methods", () => {
+      const error = new StructuralTaggedError("structural");
+      const outcome = matchError(error, {
+        StructuralTaggedError: (e) => e.message,
+      });
+
+      expect(outcome).toBe("structural");
+    });
+
     it("works data-last (pipeable)", () => {
       const error: AppError = new NotFoundError({ id: "456", message: "not found" });
       const matcher = matchError<AppError, string>({
@@ -298,6 +335,26 @@ describe("TaggedError", () => {
         message: "failed",
       });
       expect(matchPartialAppError(error)).toBe("fallback: NetworkError");
+    });
+
+    it("propagates an exception from the selected fallback", () => {
+      const throwSelectedFallback = (error: AppError) =>
+        matchErrorPartial(error, { NotFoundError: (e) => `missing: ${e.id}` }, (e) => {
+          throw e;
+        });
+      const error = new NetworkError({
+        url: "https://api.example.com",
+        message: "failed",
+      });
+
+      let thrown: unknown;
+      try {
+        throwSelectedFallback(error);
+      } catch (cause) {
+        thrown = cause;
+      }
+
+      expect(thrown).toBe(error);
     });
 
     it("narrows fallback type to exclude handled errors (data-first)", () => {

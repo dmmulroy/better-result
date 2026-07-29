@@ -1,10 +1,18 @@
 import { describe, expectTypeOf, it } from "vitest";
-import { matchError, matchErrorPartial, TaggedError } from "./error";
-import { Result } from "./result";
+import { matchError, matchErrorPartial, Result, TaggedError } from "./index";
 
-class ErrorA extends TaggedError("ErrorA")<{}>() {}
-class ErrorB extends TaggedError("ErrorB")<{}>() {}
-class ErrorC extends TaggedError("ErrorC")<{}>() {}
+class ErrorA extends TaggedError("ErrorA")<{}> {}
+class ErrorB extends TaggedError("ErrorB")<{}> {}
+class ErrorC extends TaggedError("ErrorC")<{}> {}
+
+class StructuralTaggedError extends Error {
+  readonly _tag = "StructuralTaggedError";
+}
+
+type HttpErrorResponse = {
+  readonly status: number;
+  readonly message: string;
+};
 
 describe("matchError", () => {
   it("infers union from divergent handler returns", () => {
@@ -27,6 +35,39 @@ describe("matchError", () => {
     expectTypeOf(outcome).toEqualTypeOf<number>();
   });
 
+  it("infers `never` when every handler throws", () => {
+    const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
+    const outcome = matchError(result.error, {
+      ErrorA: (err) => {
+        throw err;
+      },
+      ErrorB: (err) => {
+        throw err;
+      },
+    });
+    expectTypeOf(outcome).toBeNever();
+  });
+
+  it("supports a concrete return type when other handlers throw", () => {
+    const toHttpErrorResponse = (error: ErrorA | ErrorB): HttpErrorResponse =>
+      matchError(error, {
+        ErrorA: () => ({ status: 400, message: "Invalid request" }),
+        ErrorB: (err) => {
+          throw err;
+        },
+      });
+
+    expectTypeOf(toHttpErrorResponse).returns.toEqualTypeOf<HttpErrorResponse>();
+  });
+
+  it("continues to support structurally tagged errors", () => {
+    const error = new StructuralTaggedError("structural");
+    const outcome = matchError(error, {
+      StructuralTaggedError: () => "handled" as const,
+    });
+    expectTypeOf(outcome).toEqualTypeOf<"handled">();
+  });
+
   it("narrows handler params to the matched error (data-first)", () => {
     const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
     matchError(result.error, {
@@ -43,7 +84,16 @@ describe("matchError", () => {
     });
   });
 
-  it("works data-last (pipeable)", () => {
+  it("infers union from divergent handler returns data-last", () => {
+    const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
+    const outcome = matchError({
+      ErrorA: () => 1,
+      ErrorB: () => "B",
+    })(result.error);
+    expectTypeOf(outcome).toEqualTypeOf<number | string>();
+  });
+
+  it("drops `never` data-last", () => {
     const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
     const outcome = matchError({
       ErrorA: (_err) => "A" as const,
@@ -117,6 +167,16 @@ describe("matchErrorPartial", () => {
     );
   });
 
+  it("explicit R rejects a fallback returning the wrong type", () => {
+    const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
+    matchErrorPartial<ErrorA | ErrorB, string>(
+      result.error,
+      { ErrorA: () => "A" },
+      // @ts-expect-error - number is not assignable to string
+      (_err) => 123,
+    );
+  });
+
   it("explicit R constrains all handler returns (data-last)", () => {
     const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
     const outcome = matchErrorPartial<ErrorA | ErrorB, string>(
@@ -139,6 +199,18 @@ describe("matchErrorPartial", () => {
       (_err) => 0,
     );
     expectTypeOf(outcome).toEqualTypeOf<"specific" | number>();
+  });
+
+  it("infers only the fallback return for an empty handler map", () => {
+    const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
+    const outcome = matchErrorPartial(result.error, {}, () => "fallback" as const);
+    expectTypeOf(outcome).toEqualTypeOf<"fallback">();
+  });
+
+  it("continues to support structurally tagged errors", () => {
+    const error = new StructuralTaggedError("structural");
+    const outcome = matchErrorPartial(error, {}, () => "fallback" as const);
+    expectTypeOf(outcome).toEqualTypeOf<"fallback">();
   });
 
   it("drops `never` from throwing handler and fallback", () => {
