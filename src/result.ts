@@ -817,17 +817,93 @@ const codec = <
   } satisfies ResultCodec<TOkSerialize, TErrSerialize, TOkDeserialize, TErrDeserialize>;
 };
 
-const partition = <T, E>(results: readonly Result<T, E>[]): [T[], E[]] => {
-  const oks: T[] = [];
-  const errs: E[] = [];
-  for (const r of results) {
-    if (r.status === "ok") {
-      oks.push(r.value);
+type AllResultValues<Results extends readonly AnyResult[]> = {
+  -readonly [Index in keyof Results]: InferOk<Results[Index]>;
+};
+
+type AnyAsyncResult = AnyResult | PromiseLike<AnyResult>;
+type AwaitedResults<Results extends readonly AnyAsyncResult[]> = {
+  -readonly [Index in keyof Results]: Awaited<Results[Index]>;
+};
+
+type ResultValueUnion<Results extends readonly AnyResult[]> = InferOk<Results[number]>;
+type ResultErrorUnion<Results extends readonly AnyResult[]> = InferErr<Results[number]>;
+
+type PartitionedResults<Results extends readonly AnyResult[]> = [
+  Array<ResultValueUnion<Results>>,
+  Array<ResultErrorUnion<Results>>,
+];
+
+/** Awaits Result inputs concurrently and converts an unexpected rejection into a Panic. */
+const awaitResultsOrPanic = async <const Results extends readonly AnyAsyncResult[]>(
+  results: Results,
+  panicMessage: string,
+): Promise<AwaitedResults<Results>> => {
+  try {
+    return await Promise.all(results);
+  } catch (cause) {
+    return panic(panicMessage, cause);
+  }
+};
+
+/** Collects success values in input order or returns the first error. */
+const all = <const Results extends readonly AnyResult[]>(
+  results: Results,
+): Result<AllResultValues<Results>, ResultErrorUnion<Results>> => {
+  const values: unknown[] = [];
+  for (const result of results) {
+    if (result.status === "error") {
+      // SAFETY: The input constraint guarantees this error belongs to Results[number].
+      // TypeScript cannot correlate the narrowed indexed element with ResultErrorUnion<Results>.
+      return result as unknown as Err<AllResultValues<Results>, ResultErrorUnion<Results>>;
+    }
+    values.push(result.value);
+  }
+  // SAFETY: Every input was Ok and values were appended once in input order, so this
+  // mutable array has exactly the mapped tuple or homogeneous array shape.
+  return ok(values as unknown as AllResultValues<Results>);
+};
+
+/** Concurrently awaits Results, then collects success values or returns the first input-order error. */
+const allAsync = async <const Results extends readonly AnyAsyncResult[]>(
+  results: Results,
+): Promise<
+  Result<AllResultValues<AwaitedResults<Results>>, ResultErrorUnion<AwaitedResults<Results>>>
+> => {
+  const awaitedResults = await awaitResultsOrPanic(
+    results,
+    "Result.allAsync input promise rejected",
+  );
+  return all(awaitedResults);
+};
+
+/** Splits success values and errors into separate arrays while preserving input order. */
+const partition = <const Results extends readonly AnyResult[]>(
+  results: Results,
+): PartitionedResults<Results> => {
+  const oks: unknown[] = [];
+  const errs: unknown[] = [];
+  for (const result of results) {
+    if (result.status === "ok") {
+      oks.push(result.value);
     } else {
-      errs.push(r.error);
+      errs.push(result.error);
     }
   }
-  return [oks, errs];
+  // SAFETY: Each payload came from the corresponding branch of Results[number].
+  // Both arrays preserve the relative input order of their branch.
+  return [oks, errs] as unknown as PartitionedResults<Results>;
+};
+
+/** Concurrently awaits Results, then splits success values and errors into ordered arrays. */
+const partitionAsync = async <const Results extends readonly AnyAsyncResult[]>(
+  results: Results,
+): Promise<PartitionedResults<AwaitedResults<Results>>> => {
+  const awaitedResults = await awaitResultsOrPanic(
+    results,
+    "Result.partitionAsync input promise rejected",
+  );
+  return partition(awaitedResults);
 };
 
 /**
@@ -1092,12 +1168,40 @@ export const Result = {
    */
   codec,
   /**
-   * Splits array of Results into tuple of [okValues, errorValues].
+   * Collects success values in input order or returns the first error.
+   * Tuple inputs preserve each success value type and union their error types.
    *
    * @example
-   * partition([ok(1), err("a"), ok(2)]) // [[1, 2], ["a"]]
+   * Result.all([Result.ok(1), Result.ok("hello")]) // Ok([1, "hello"])
+   * Result.all([Result.ok(1), Result.err("failed")]) // Err("failed")
+   */
+  all,
+  /**
+   * Concurrently awaits Results, then collects success values or returns the first input-order error.
+   * Tuple inputs preserve each success value type and union their error types.
+   * A rejected input promise is an unrecoverable defect and throws `Panic`.
+   *
+   * @example
+   * await Result.allAsync([fetchUser(), fetchAccount()]) // Result<[User, Account], UserError | AccountError>
+   */
+  allAsync,
+  /**
+   * Splits Results into [successValues, errorValues], preserving relative input order.
+   * Heterogeneous inputs produce unions in their corresponding output arrays.
+   *
+   * @example
+   * Result.partition([Result.ok(1), Result.err("a"), Result.ok(2)]) // [[1, 2], ["a"]]
    */
   partition,
+  /**
+   * Concurrently awaits Results, then splits successes and errors into ordered arrays.
+   * Heterogeneous inputs produce unions in their corresponding output arrays.
+   * A rejected input promise is an unrecoverable defect and throws `Panic`.
+   *
+   * @example
+   * await Result.partitionAsync([fetchUser(), fetchAccount()]) // [[User], [AccountError]]
+   */
+  partitionAsync,
   /**
    * Flattens nested Result into single Result.
    *

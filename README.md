@@ -670,27 +670,30 @@ Migration differences:
 
 ### Result
 
-| Method                                  | Description                                                                          |
-| --------------------------------------- | ------------------------------------------------------------------------------------ |
-| `Result.ok(value)`                      | Create success                                                                       |
-| `Result.err(error)`                     | Create error                                                                         |
-| `Result.try(fn)`                        | Wrap throwing function                                                               |
-| `Result.tryPromise(fn, config?)`        | Wrap async function with optional retry                                              |
-| `Result.isOk(result)`                   | Type guard for Ok                                                                    |
-| `Result.isError(result)`                | Type guard for Err                                                                   |
-| `Result.gen(fn)`                        | Generator composition                                                                |
-| `Result.tryRecover(result, fn)`         | Recover error into same success type                                                 |
-| `Result.tryRecoverAsync(result, fn)`    | Async recover error into same success type                                           |
-| `Result.tap(result, fn)`                | Run side effect on success and return original result                                |
-| `Result.tapAsync(result, fn)`           | Run async side effect on success and return original result                          |
-| `Result.tapError(result, fn)`           | Run side effect on error and return original result                                  |
-| `Result.tapErrorAsync(result, fn)`      | Run async side effect on error and return original result                            |
-| `Result.tapBoth(result, handlers)`      | Run side effect on either branch and return original result                          |
-| `Result.tapBothAsync(result, handlers)` | Run async side effect on either branch and return original result                    |
-| `Result.await(promise)`                 | Wrap Promise<Result> for generators                                                  |
-| `Result.codec(config)`                  | Build a Result-level codec from Standard Schema-compatible serializers/deserializers |
-| `Result.partition(results)`             | Split array into [okValues, errValues]                                               |
-| `Result.flatten(result)`                | Flatten nested Result                                                                |
+| Method                                  | Description                                                                           |
+| --------------------------------------- | ------------------------------------------------------------------------------------- |
+| `Result.ok(value)`                      | Create success                                                                        |
+| `Result.err(error)`                     | Create error                                                                          |
+| `Result.try(fn)`                        | Wrap throwing function                                                                |
+| `Result.tryPromise(fn, config?)`        | Wrap async function with optional retry                                               |
+| `Result.isOk(result)`                   | Type guard for Ok                                                                     |
+| `Result.isError(result)`                | Type guard for Err                                                                    |
+| `Result.gen(fn)`                        | Generator composition                                                                 |
+| `Result.tryRecover(result, fn)`         | Recover error into same success type                                                  |
+| `Result.tryRecoverAsync(result, fn)`    | Async recover error into same success type                                            |
+| `Result.tap(result, fn)`                | Run side effect on success and return original result                                 |
+| `Result.tapAsync(result, fn)`           | Run async side effect on success and return original result                           |
+| `Result.tapError(result, fn)`           | Run side effect on error and return original result                                   |
+| `Result.tapErrorAsync(result, fn)`      | Run async side effect on error and return original result                             |
+| `Result.tapBoth(result, handlers)`      | Run side effect on either branch and return original result                           |
+| `Result.tapBothAsync(result, handlers)` | Run async side effect on either branch and return original result                     |
+| `Result.await(promise)`                 | Wrap Promise<Result> for generators                                                   |
+| `Result.codec(config)`                  | Build a Result-level codec from Standard Schema-compatible serializers/deserializers  |
+| `Result.all(results)`                   | Collect success values or return the first error, preserving tuple types              |
+| `Result.allAsync(results)`              | Concurrently await Results, then collect values or return the first input-order error |
+| `Result.partition(results)`             | Split Results into success and error arrays, preserving heterogeneous unions          |
+| `Result.partitionAsync(results)`        | Concurrently await Results, then split successes and errors into ordered arrays       |
+| `Result.flatten(result)`                | Flatten nested Result                                                                 |
 
 ### Instance Methods
 

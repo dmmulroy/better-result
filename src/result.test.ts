@@ -4,7 +4,6 @@ import {
   Result,
   Ok,
   Err,
-  type Result as ResultType,
   type SerializedResult,
   type StandardSchemaResult,
   type StandardSchemaV1,
@@ -2381,10 +2380,10 @@ describe("Result", () => {
       });
 
       expectTypeOf(serialized).toEqualTypeOf<
-        Promise<ResultType<SerializedResult<UserWire, AppErrorWire>, ResultSerializationError>>
+        Promise<Result<SerializedResult<UserWire, AppErrorWire>, ResultSerializationError>>
       >();
       expectTypeOf(deserialized).toEqualTypeOf<
-        Promise<ResultType<User, AppError | ResultDeserializationError>>
+        Promise<Result<User, AppError | ResultDeserializationError>>
       >();
       await expect(serialized).resolves.toBeInstanceOf(Ok);
       await expect(serialized).resolves.toEqual(
@@ -2442,16 +2441,16 @@ describe("Result", () => {
       });
 
       expectTypeOf(syncSerialized).toEqualTypeOf<
-        ResultType<SerializedResult<string, number>, ResultSerializationError>
+        Result<SerializedResult<string, number>, ResultSerializationError>
       >();
       expectTypeOf(asyncDeserialized).toEqualTypeOf<
-        Promise<ResultType<string, number | ResultDeserializationError>>
+        Promise<Result<string, number | ResultDeserializationError>>
       >();
       expectTypeOf(asyncSerialized).toEqualTypeOf<
-        Promise<ResultType<SerializedResult<string, number>, ResultSerializationError>>
+        Promise<Result<SerializedResult<string, number>, ResultSerializationError>>
       >();
       expectTypeOf(syncDeserialized).toEqualTypeOf<
-        ResultType<string, number | ResultDeserializationError>
+        Result<string, number | ResultDeserializationError>
       >();
       expect(syncSerialized).toEqual(Result.ok({ status: "ok", value: "value" }));
       await expect(asyncDeserialized).resolves.toEqual(Result.ok("value"));
@@ -2474,7 +2473,7 @@ describe("Result", () => {
           })),
         },
       });
-      const getResult = (): ResultType<string, number> => Result.ok("value");
+      const getResult = (): Result<string, number> => Result.ok("value");
       const unknownEnvelope: unknown = { status: "error", error: 42 };
 
       const serializedOk = MixedBranchCodec.serialize(Result.ok("value"));
@@ -2484,8 +2483,8 @@ describe("Result", () => {
       const deserializedErr = MixedBranchCodec.deserialize({ status: "error", error: 42 });
       const deserializedUnknownEnvelope = MixedBranchCodec.deserialize(unknownEnvelope);
 
-      type Serialized = ResultType<SerializedResult<string, number>, ResultSerializationError>;
-      type Deserialized = ResultType<string, number | ResultDeserializationError>;
+      type Serialized = Result<SerializedResult<string, number>, ResultSerializationError>;
+      type Deserialized = Result<string, number | ResultDeserializationError>;
       expectTypeOf(serializedOk).toEqualTypeOf<Serialized>();
       expectTypeOf(serializedErr).toEqualTypeOf<Promise<Serialized>>();
       expectTypeOf(serializedUnknownBranch).toEqualTypeOf<Serialized | Promise<Serialized>>();
@@ -2521,8 +2520,8 @@ describe("Result", () => {
       const result = AsyncCodec.deserialize(invalidEnvelope);
 
       expectTypeOf(result).toEqualTypeOf<
-        | ResultType<string, number | ResultDeserializationError>
-        | Promise<ResultType<string, number | ResultDeserializationError>>
+        | Result<string, number | ResultDeserializationError>
+        | Promise<Result<string, number | ResultDeserializationError>>
       >();
       expect(result).toBeInstanceOf(Err);
     });
@@ -2585,11 +2584,9 @@ describe("Result", () => {
       });
 
       expectTypeOf(outbound).toEqualTypeOf<
-        ResultType<SerializedResult<UserWire, AppErrorWire>, ResultSerializationError>
+        Result<SerializedResult<UserWire, AppErrorWire>, ResultSerializationError>
       >();
-      expectTypeOf(inbound).toEqualTypeOf<
-        ResultType<User, AppError | ResultDeserializationError>
-      >();
+      expectTypeOf(inbound).toEqualTypeOf<Result<User, AppError | ResultDeserializationError>>();
 
       const serializeInvalidUser = (): void => {
         // @ts-expect-error -- The Ok serializer requires the complete User input type.
@@ -3332,6 +3329,114 @@ describe("Type Inference", () => {
     });
   });
 
+  describe("all", () => {
+    it("returns an empty tuple for empty input", () => {
+      const result = Result.all([]);
+
+      expectTypeOf(result).toEqualTypeOf<Result<[], never>>();
+      expect(result).toEqual(Result.ok([]));
+    });
+
+    it("collects Ok values in input order and preserves tuple types", () => {
+      const getNumberResult = (): Result<number, ErrorA> => Result.ok(1);
+      const getStringResult = (): Result<string, ErrorB> => Result.ok("hello");
+      const result = Result.all([getNumberResult(), getStringResult()]);
+
+      expectTypeOf(result).toEqualTypeOf<Result<[number, string], ErrorA | ErrorB>>();
+      expect(result).toEqual(Result.ok([1, "hello"]));
+    });
+
+    it("returns the first error and unions tuple error types", () => {
+      const firstError = new ErrorA("first");
+      const secondError = new ErrorB("second");
+      const getNumberResult = (): Result<number, ErrorA> => Result.err(firstError);
+      const getStringResult = (): Result<string, ErrorB> => Result.err(secondError);
+      const result = Result.all([getNumberResult(), getStringResult()]);
+
+      expectTypeOf(result).toEqualTypeOf<Result<[number, string], ErrorA | ErrorB>>();
+      expect(Result.isError(result)).toBe(true);
+      if (Result.isError(result)) {
+        expect(result.error).toBe(firstError);
+      }
+    });
+
+    it("infers homogeneous array value and error types", () => {
+      const results: Array<Result<number, ErrorA>> = [Result.ok(1), Result.ok(2)];
+      const result = Result.all(results);
+
+      expectTypeOf(result).toEqualTypeOf<Result<number[], ErrorA>>();
+      expect(result).toEqual(Result.ok([1, 2]));
+    });
+
+    it("accepts readonly tuples and returns a mutable value tuple", () => {
+      const results = [Result.ok(1), Result.ok("hello")] as const;
+      const result = Result.all(results);
+
+      expectTypeOf(result).toEqualTypeOf<Result<[number, string], never>>();
+      expect(result).toEqual(Result.ok([1, "hello"]));
+    });
+  });
+
+  describe("allAsync", () => {
+    it("returns an empty tuple for empty input", async () => {
+      const result = await Result.allAsync([]);
+
+      expectTypeOf(result).toEqualTypeOf<Result<[], never>>();
+      expect(result).toEqual(Result.ok([]));
+    });
+
+    it("collects asynchronous Ok values and preserves tuple types", async () => {
+      const getNumberResult = async (): Promise<Result<number, ErrorA>> => Result.ok(1);
+      const getStringResult = async (): Promise<Result<string, ErrorB>> => Result.ok("hello");
+      const result = await Result.allAsync([getNumberResult(), getStringResult()]);
+
+      expectTypeOf(result).toEqualTypeOf<Result<[number, string], ErrorA | ErrorB>>();
+      expect(result).toEqual(Result.ok([1, "hello"]));
+    });
+
+    it("returns the first error by input order", async () => {
+      const firstError = new ErrorA("first");
+      const secondError = new ErrorB("second");
+      const getNumberResult = async (): Promise<Result<number, ErrorA>> => Result.err(firstError);
+      const getStringResult = async (): Promise<Result<string, ErrorB>> => Result.err(secondError);
+      const result = await Result.allAsync([getNumberResult(), getStringResult()]);
+
+      expectTypeOf(result).toEqualTypeOf<Result<[number, string], ErrorA | ErrorB>>();
+      expect(Result.isError(result)).toBe(true);
+      if (Result.isError(result)) {
+        expect(result.error).toBe(firstError);
+      }
+    });
+
+    it("infers homogeneous asynchronous array types", async () => {
+      const results: Array<Promise<Result<number, ErrorA>>> = [
+        Promise.resolve(Result.ok(1)),
+        Promise.resolve(Result.ok(2)),
+      ];
+      const result = await Result.allAsync(results);
+
+      expectTypeOf(result).toEqualTypeOf<Result<number[], ErrorA>>();
+      expect(result).toEqual(Result.ok([1, 2]));
+    });
+
+    it("accepts mixed Result and Promise<Result> inputs", async () => {
+      const result = await Result.allAsync([Result.ok(1), Promise.resolve(Result.ok("hello"))]);
+
+      expectTypeOf(result).toEqualTypeOf<Result<[number, string], never>>();
+      expect(result).toEqual(Result.ok([1, "hello"]));
+    });
+
+    it("panics when an input promise rejects", async () => {
+      const cause = new Error("input rejected");
+
+      await expect(Result.allAsync([Promise.reject(cause)])).rejects.toMatchObject({
+        _tag: "Panic",
+        message: "Result.allAsync input promise rejected",
+        cause,
+      });
+    });
+  });
+
   describe("partition", () => {
     it("returns empty arrays for empty input", () => {
       expect(Result.partition([])).toEqual([[], []]);
@@ -3353,6 +3458,77 @@ describe("Type Inference", () => {
         [1, 2],
         ["a", "b"],
       ]);
+    });
+
+    it("infers heterogeneous success and error unions", () => {
+      const getNumberResult = (): Result<number, ErrorA> => Result.ok(1);
+      const getStringResult = (): Result<string, ErrorB> => Result.err(new ErrorB("failed"));
+      const partitioned = Result.partition([getNumberResult(), getStringResult()] as const);
+
+      expectTypeOf(partitioned).toEqualTypeOf<[Array<number | string>, Array<ErrorA | ErrorB>]>();
+      expect(partitioned).toEqual([[1], [new ErrorB("failed")]]);
+    });
+  });
+
+  describe("partitionAsync", () => {
+    it("returns empty arrays for empty input", async () => {
+      const partitioned = await Result.partitionAsync([]);
+
+      const expected: [never[], never[]] = partitioned;
+      expect(expected).toEqual([[], []]);
+    });
+
+    it("partitions asynchronous heterogeneous Results and preserves order", async () => {
+      const errorA = new ErrorA("a");
+      const errorB = new ErrorB("b");
+      const getFirstNumber = async (): Promise<Result<number, ErrorA>> => Result.ok(1);
+      const getFirstString = async (): Promise<Result<string, ErrorA>> => Result.err(errorA);
+      const getSecondNumber = async (): Promise<Result<number, ErrorB>> => Result.ok(2);
+      const getSecondString = async (): Promise<Result<string, ErrorB>> => Result.err(errorB);
+      const partitioned = await Result.partitionAsync([
+        getFirstNumber(),
+        getFirstString(),
+        getSecondNumber(),
+        getSecondString(),
+      ]);
+
+      expectTypeOf(partitioned).toEqualTypeOf<[Array<number | string>, Array<ErrorA | ErrorB>]>();
+      expect(partitioned).toEqual([
+        [1, 2],
+        [errorA, errorB],
+      ]);
+    });
+
+    it("infers homogeneous asynchronous array types", async () => {
+      const results: Array<Promise<Result<number, ErrorA>>> = [
+        Promise.resolve(Result.ok(1)),
+        Promise.resolve(Result.err(new ErrorA("failed"))),
+      ];
+      const partitioned = await Result.partitionAsync(results);
+
+      expectTypeOf(partitioned).toEqualTypeOf<[number[], ErrorA[]]>();
+      expect(partitioned[0]).toEqual([1]);
+      expect(partitioned[1]).toEqual([new ErrorA("failed")]);
+    });
+
+    it("accepts mixed Result and Promise<Result> inputs", async () => {
+      const partitioned = await Result.partitionAsync([
+        Result.ok(1),
+        Promise.resolve(Result.err("failed")),
+      ]);
+
+      expectTypeOf(partitioned).toEqualTypeOf<[number[], string[]]>();
+      expect(partitioned).toEqual([[1], ["failed"]]);
+    });
+
+    it("panics when an input promise rejects", async () => {
+      const cause = new Error("input rejected");
+
+      await expect(Result.partitionAsync([Promise.reject(cause)])).rejects.toMatchObject({
+        _tag: "Panic",
+        message: "Result.partitionAsync input promise rejected",
+        cause,
+      });
     });
   });
 
