@@ -489,6 +489,18 @@ export interface SerializedErr<E> {
 /** Shape of a serialized Result over RPC. */
 export type SerializedResult<T, E> = SerializedOk<T> | SerializedErr<E>;
 
+type SerializedOkEnvelope = {
+  readonly status: "ok";
+  readonly value?: unknown;
+};
+
+type SerializedErrEnvelope = {
+  readonly status: "error";
+  readonly error?: unknown;
+};
+
+type SerializedResultEnvelope = SerializedOkEnvelope | SerializedErrEnvelope;
+
 /** Infers the input accepted by a Standard Schema-compatible schema. */
 export type StandardSchemaInput<TSchema extends StandardSchemaV1> =
   StandardSchemaV1.InferInput<TSchema>;
@@ -602,16 +614,16 @@ export interface ResultCodec<
   >(
     result: TResult,
   ) => SerializedCodecOperationResult<TResult, TOkSerialize, TErrSerialize>;
-  /** Deserializes a known branch precisely; unknown envelopes include sync failure and async schema outcomes. */
+  /** Deserializes a known branch precisely, including status-only envelopes produced when JSON omits undefined payloads. */
   readonly deserialize: {
     (
-      value: SerializedOk<unknown>,
+      value: SerializedOkEnvelope,
     ): StandardSchemaOperationResult<
       DeserializedCodecResult<TOkDeserialize, TErrDeserialize>,
       TOkDeserialize
     >;
     (
-      value: SerializedErr<unknown>,
+      value: SerializedErrEnvelope,
     ): StandardSchemaOperationResult<
       DeserializedCodecResult<TOkDeserialize, TErrDeserialize>,
       TErrDeserialize
@@ -620,12 +632,13 @@ export interface ResultCodec<
   };
 }
 
-function isSerializedResult(value: unknown): value is SerializedResult<unknown, unknown> {
+/** Checks only the Result envelope; the selected codec schema validates its optional payload. */
+function isSerializedResultEnvelope(value: unknown): value is SerializedResultEnvelope {
   return (
     value !== null &&
     typeof value === "object" &&
     "status" in value &&
-    ((value.status === "ok" && "value" in value) || (value.status === "error" && "error" in value))
+    (value.status === "ok" || value.status === "error")
   );
 }
 
@@ -774,16 +787,16 @@ const codec = <
   };
 
   function deserializeResult(
-    value: SerializedOk<unknown>,
+    value: SerializedOkEnvelope,
   ): StandardSchemaOperationResult<DeserializeResult, TOkDeserialize>;
   function deserializeResult(
-    value: SerializedErr<unknown>,
+    value: SerializedErrEnvelope,
   ): StandardSchemaOperationResult<DeserializeResult, TErrDeserialize>;
   function deserializeResult(
     value: unknown,
   ): UnknownDeserializationResult<TOkDeserialize, TErrDeserialize>;
   function deserializeResult(value: unknown): DeserializeResult | Promise<DeserializeResult> {
-    if (!isSerializedResult(value)) {
+    if (!isSerializedResultEnvelope(value)) {
       return err(new ResultDeserializationError({ value }));
     }
     if (value.status === "ok") {

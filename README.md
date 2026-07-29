@@ -630,6 +630,8 @@ const decoded = await MixedCodec.deserialize(inputFromNetwork);
 
 Schema validation issues are returned as `ResultSerializationError` or `ResultDeserializationError`. A schema that throws or returns a rejected Promise is a defect: the codec throws or rejects with `Panic` and preserves the original error as `cause`.
 
+JSON transports omit object properties whose value is `undefined`. The codec therefore accepts `{ status: "ok" }` and `{ status: "error" }` as envelopes and passes the missing payload to the selected deserialization schema as `undefined`. A `void` or `undefined` schema can accept it; schemas requiring another payload return `ResultDeserializationError` with their validation issues.
+
 ### Migrating from `Result.serialize` / `Result.deserialize`
 
 `Result.serialize`, `Result.deserialize`, and `Result.hydrate` were removed in 3.0. The old helpers copied payloads without validating them:

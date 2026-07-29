@@ -143,7 +143,7 @@ describe("Result", () => {
       expect(matched).toBe("matched");
     });
 
-    it("Ok<void> serializes correctly through a codec", () => {
+    it("Ok<void> roundtrips through a JSON transport with a codec", () => {
       const VoidCodec = Result.codec({
         serialize: { ok: identitySchema<void>("void-ok"), err: identitySchema<never>("void-err") },
         deserialize: {
@@ -151,7 +151,13 @@ describe("Result", () => {
           err: identitySchema<never>("void-err-in"),
         },
       });
-      expect(VoidCodec.serialize(Result.ok()).unwrap()).toEqual({ status: "ok", value: undefined });
+      const serialized = VoidCodec.serialize(Result.ok()).unwrap();
+      const json = JSON.stringify(serialized);
+      const received: unknown = JSON.parse(json);
+
+      expect(serialized).toEqual({ status: "ok", value: undefined });
+      expect(json).toBe('{"status":"ok"}');
+      expect(VoidCodec.deserialize(received)).toEqual(Result.ok());
     });
   });
 
@@ -167,6 +173,26 @@ describe("Result", () => {
       const error = new Error("oops");
       const result = Result.err(error);
       expect(result.error).toBe(error);
+    });
+
+    it("Err<undefined> roundtrips through a JSON transport with a codec", () => {
+      const UndefinedErrorCodec = Result.codec({
+        serialize: {
+          ok: identitySchema<never>("never-ok"),
+          err: identitySchema<undefined>("undefined-err"),
+        },
+        deserialize: {
+          ok: identitySchema<never>("never-ok-in"),
+          err: identitySchema<undefined>("undefined-err-in"),
+        },
+      });
+      const serialized = UndefinedErrorCodec.serialize(Result.err(undefined)).unwrap();
+      const json = JSON.stringify(serialized);
+      const received: unknown = JSON.parse(json);
+
+      expect(serialized).toEqual({ status: "error", error: undefined });
+      expect(json).toBe('{"status":"error"}');
+      expect(UndefinedErrorCodec.deserialize(received)).toEqual(Result.err(undefined));
     });
   });
 
@@ -2212,6 +2238,28 @@ describe("Result", () => {
           'Failed to deserialize value as Result: expected { status: "ok", value } or { status: "error", error }',
         );
         expect(result.error.value).toEqual({ foo: "bar" });
+      }
+    });
+
+    it("passes a missing Ok payload to its schema as undefined", () => {
+      const result = UserResultCodec.deserialize({ status: "ok" });
+
+      expect(Result.isError(result)).toBe(true);
+      if (Result.isError(result) && ResultDeserializationError.is(result.error)) {
+        expect(result.error.message).toBe("Failed to deserialize Result payload");
+        expect(result.error.value).toBe(undefined);
+        expect(result.error.issues).toEqual([{ message: "Expected object" }]);
+      }
+    });
+
+    it("passes a missing Err payload to its schema as undefined", () => {
+      const result = UserResultCodec.deserialize({ status: "error" });
+
+      expect(Result.isError(result)).toBe(true);
+      if (Result.isError(result) && ResultDeserializationError.is(result.error)) {
+        expect(result.error.message).toBe("Failed to deserialize Result payload");
+        expect(result.error.value).toBe(undefined);
+        expect(result.error.issues).toEqual([{ message: "Expected object" }]);
       }
     });
 
