@@ -107,13 +107,22 @@ const message = matchError(error, {
 });
 ```
 
-### Partial Match with Fallback
+### Partial Match
 
-Handle subset, catch-all for rest:
+Handle a subset while leaving unhandled errors unchanged:
 
 ```typescript
 import { matchErrorPartial } from "better-result";
 
+const transformed = matchErrorPartial(error, {
+  NotFoundError: (e) => `Missing: ${e.id}`,
+});
+// string | ValidationError | AuthError
+```
+
+Provide a custom fallback to transform the remaining errors:
+
+```typescript
 const message = matchErrorPartial(
   error,
   { NotFoundError: (e) => `Missing: ${e.id}` },

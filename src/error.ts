@@ -140,8 +140,23 @@ type MatchReturn<H> = {
 /** Partial handler map for non-exhaustive matching */
 type PartialMatchHandlers<E extends TaggedErrorLike, R> = Partial<MatchHandlersWithReturn<E, R>>;
 
+/** Deferred handlers with explicitly annotated concrete error parameters. */
+type AnnotatedMatchHandlers = Record<string, (err: never) => unknown>;
+
+/** Ensure each annotated handler parameter accepts the tag represented by its key. */
+type ValidateAnnotatedMatchHandlers<H extends AnnotatedMatchHandlers> = {
+  [K in keyof H]: H[K] extends (err: infer E extends TaggedErrorLike) => unknown
+    ? Extract<K, string> extends E["_tag"]
+      ? H[K]
+      : never
+    : never;
+};
+
 /** Extract handled tags from a handlers object */
 type HandledTags<E extends TaggedErrorLike, H> = Extract<keyof H, E["_tag"]>;
+
+/** Error variants not selected by a partial handler map. */
+type UnhandledMatchErrors<E extends TaggedErrorLike, H> = Exclude<E, { _tag: HandledTags<E, H> }>;
 
 /**
  * Exhaustive pattern match on tagged error union.
@@ -176,61 +191,123 @@ export const matchError: {
   return handler(err as Extract<E, { _tag: (typeof err)["_tag"] }>);
 });
 
+const returnTaggedErrorIdentity = (error: TaggedErrorLike): TaggedErrorLike => error;
+
+const applyMatchErrorPartial = (
+  err: TaggedErrorLike,
+  handlers: Partial<MatchHandlers<TaggedErrorLike>>,
+  onUnhandled: (e: TaggedErrorLike) => unknown,
+): unknown => {
+  const handler = Object.hasOwn(handlers, err._tag) ? handlers[err._tag] : undefined;
+  if (typeof handler === "function") {
+    return handler(err);
+  }
+  return onUnhandled(err);
+};
+
 /**
- * Partial pattern match with fallback for unhandled tags.
+ * Partially matches tagged errors, returning unhandled errors unchanged by default.
  *
  * @example
- * matchErrorPartial(err, {
+ * const transformed = matchErrorPartial(err, {
  *   NotFoundError: (e) => `Missing: ${e.id}`,
- * }, (e) => `Unknown: ${e.message}`);
+ * });
+ *
+ * // Annotate variant-specific handlers when using the pipeable form.
+ * const transformError = matchErrorPartial({
+ *   NotFoundError: (e: NotFoundError) => `Missing: ${e.id}`,
+ * });
+ *
+ * // Supply a fallback to transform unhandled errors instead.
+ * const message = matchErrorPartial(
+ *   err,
+ *   { NotFoundError: (e) => `Missing: ${e.id}` },
+ *   (e) => `Unknown: ${e.message}`,
+ * );
  */
-export const matchErrorPartial: {
-  /** Pipeable — E deferred to call site, fallback receives a tagged error-like value */
-  <H extends Partial<MatchHandlers<TaggedErrorLike>>, R>(
-    handlers: H,
-    fallback: (e: TaggedErrorLike) => R,
-  ): {
-    <E extends TaggedErrorLike>(err: E): MatchReturn<H> | R;
-  };
-  /** Pipeable with explicit E, R — H inferred via default, fallback narrowed */
-  <
-    E extends TaggedErrorLike,
-    R,
-    const H extends PartialMatchHandlers<E, R> = PartialMatchHandlers<E, R>,
-  >(
-    handlers: H,
-    fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>> }>) => R,
-  ): (err: E) => R;
-  /** Data-first with inference — E from err, H from handlers, R from fallback */
-  <E extends TaggedErrorLike, const H extends Partial<MatchHandlers<E>>, R>(
-    err: E,
-    handlers: H,
-    fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>> }>) => R,
-  ): MatchReturn<H> | R;
-  /** Data-first with explicit R — H inferred via default, fallback narrowed */
-  <
-    E extends TaggedErrorLike,
-    R,
-    const H extends PartialMatchHandlers<E, R> = PartialMatchHandlers<E, R>,
-  >(
-    err: E,
-    handlers: H,
-    fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>> }>) => R,
-  ): R;
-} = dual(
-  3,
-  (
-    err: TaggedErrorLike,
-    handlers: Partial<MatchHandlers<TaggedErrorLike>>,
-    fallback: (e: TaggedErrorLike) => unknown,
-  ): unknown => {
-    const handler = handlers[err._tag];
-    if (typeof handler === "function") {
-      return handler(err);
-    }
-    return fallback(err);
-  },
-);
+export function matchErrorPartial<H extends Partial<MatchHandlers<TaggedErrorLike>>, R>(
+  handlers: H,
+  fallback: (e: TaggedErrorLike) => R,
+): <E extends TaggedErrorLike>(err: E) => MatchReturn<H> | R;
+/** Pipeable with explicit E, R — H inferred via default, fallback narrowed */
+export function matchErrorPartial<
+  E extends TaggedErrorLike,
+  R,
+  const H extends PartialMatchHandlers<E, R> = PartialMatchHandlers<E, R>,
+>(handlers: H, fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>> }>) => R): (err: E) => R;
+/** Pipeable with identity fallback — E is deferred until the matcher is applied */
+export function matchErrorPartial<const H extends Partial<MatchHandlers<TaggedErrorLike>>>(
+  handlers: H,
+): <E extends TaggedErrorLike>(err: E) => MatchReturn<H> | UnhandledMatchErrors<E, H>;
+/** Pipeable with explicitly annotated handler parameters and identity fallback */
+export function matchErrorPartial<const H extends AnnotatedMatchHandlers>(
+  handlers: H & ValidateAnnotatedMatchHandlers<H>,
+): <E extends TaggedErrorLike>(err: E) => MatchReturn<H> | UnhandledMatchErrors<E, H>;
+/** Pipeable with explicit E, R and identity fallback — unhandled E remains conservative */
+export function matchErrorPartial<E extends TaggedErrorLike, R>(
+  handlers: PartialMatchHandlers<E, R>,
+): (err: E) => R | E;
+/** Pipeable with exact H and identity fallback — handled variants are excluded */
+export function matchErrorPartial<
+  E extends TaggedErrorLike,
+  R,
+  const H extends PartialMatchHandlers<E, R>,
+>(handlers: H): (err: E) => R | UnhandledMatchErrors<E, H>;
+/** Data-first with identity fallback — returns handler results or unhandled variants */
+export function matchErrorPartial<
+  E extends TaggedErrorLike,
+  const H extends Partial<MatchHandlers<E>>,
+>(err: E, handlers: H): MatchReturn<H> | UnhandledMatchErrors<E, H>;
+/** Data-first with explicit E, R and identity fallback — unhandled E remains conservative */
+export function matchErrorPartial<E extends TaggedErrorLike, R>(
+  err: E,
+  handlers: PartialMatchHandlers<E, R>,
+): R | E;
+/** Data-first with exact H and identity fallback — handled variants are excluded */
+export function matchErrorPartial<
+  E extends TaggedErrorLike,
+  R,
+  const H extends PartialMatchHandlers<E, R>,
+>(err: E, handlers: H): R | UnhandledMatchErrors<E, H>;
+/** Data-first with inference — E from err, H from handlers, R from fallback */
+export function matchErrorPartial<
+  E extends TaggedErrorLike,
+  const H extends Partial<MatchHandlers<E>>,
+  R,
+>(
+  err: E,
+  handlers: H,
+  fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>> }>) => R,
+): MatchReturn<H> | R;
+/** Data-first with explicit R — H inferred via default, fallback narrowed */
+export function matchErrorPartial<
+  E extends TaggedErrorLike,
+  R,
+  const H extends PartialMatchHandlers<E, R> = PartialMatchHandlers<E, R>,
+>(err: E, handlers: H, fallback: (e: Exclude<E, { _tag: NoInfer<HandledTags<E, H>> }>) => R): R;
+export function matchErrorPartial(
+  errOrHandlers: TaggedErrorLike | Partial<MatchHandlers<TaggedErrorLike>>,
+  handlersOrFallback?: Partial<MatchHandlers<TaggedErrorLike>> | ((e: TaggedErrorLike) => unknown),
+  fallback?: (e: TaggedErrorLike) => unknown,
+): unknown {
+  if (typeof handlersOrFallback === "function") {
+    // SAFETY: In the two-argument pipeable overload, the first argument is the handler map.
+    const handlers = errOrHandlers as Partial<MatchHandlers<TaggedErrorLike>>;
+    return (err: TaggedErrorLike): unknown =>
+      applyMatchErrorPartial(err, handlers, handlersOrFallback);
+  }
+
+  if (handlersOrFallback === undefined) {
+    // SAFETY: In the one-argument pipeable overload, the first argument is the handler map.
+    const handlers = errOrHandlers as Partial<MatchHandlers<TaggedErrorLike>>;
+    return (err: TaggedErrorLike): unknown =>
+      applyMatchErrorPartial(err, handlers, returnTaggedErrorIdentity);
+  }
+
+  // SAFETY: In data-first overloads, the first argument is the tagged error.
+  const err = errOrHandlers as TaggedErrorLike;
+  return applyMatchErrorPartial(err, handlersOrFallback, fallback ?? returnTaggedErrorIdentity);
+}
 
 /**
  * Type guard for tagged error instances.

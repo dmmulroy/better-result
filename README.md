@@ -469,8 +469,21 @@ matchError(error, {
   ValidationError: (e) => `Bad field: ${e.field}`,
 });
 
-// Partial matching with fallback
-matchErrorPartial(
+// Partial matching leaves unhandled errors unchanged by default
+const transformed = matchErrorPartial(error, {
+  NotFoundError: (e) => `Missing: ${e.id}`,
+});
+// string | ValidationError
+
+// In data-last form, annotate handlers that use variant-specific fields
+const transformError = matchErrorPartial({
+  NotFoundError: (e: NotFoundError) => `Missing: ${e.id}`,
+});
+const piped = transformError(error);
+// string | ValidationError
+
+// A custom fallback can transform unhandled errors
+const message = matchErrorPartial(
   error,
   { NotFoundError: (e) => `Missing: ${e.id}` },
   (e) => `Unknown: ${e.message}`,
@@ -716,15 +729,15 @@ Migration differences:
 
 ### TaggedError
 
-| Method                                 | Description                        |
-| -------------------------------------- | ---------------------------------- |
-| `TaggedError(tag)<Props>()`            | Factory for tagged error class     |
-| `TaggedError.is(value)`                | Type guard for any TaggedError     |
-| `matchError(err, handlers)`            | Exhaustive pattern match by `_tag` |
-| `matchErrorPartial(err, handlers, fb)` | Partial match with fallback        |
-| `isTaggedError(value)`                 | Type guard (standalone function)   |
-| `panic(message, cause?)`               | Throw unrecoverable Panic          |
-| `isPanic(value)`                       | Type guard for Panic               |
+| Method                                  | Description                                             |
+| --------------------------------------- | ------------------------------------------------------- |
+| `TaggedError(tag)<Props>()`             | Factory for tagged error class                          |
+| `TaggedError.is(value)`                 | Type guard for any TaggedError                          |
+| `matchError(err, handlers)`             | Exhaustive pattern match by `_tag`                      |
+| `matchErrorPartial(err, handlers, fb?)` | Partial match; unhandled errors pass through by default |
+| `isTaggedError(value)`                  | Type guard (standalone function)                        |
+| `panic(message, cause?)`                | Throw unrecoverable Panic                               |
+| `isPanic(value)`                        | Type guard for Panic                                    |
 
 ### Type Helpers
 

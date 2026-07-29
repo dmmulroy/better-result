@@ -30,6 +30,10 @@ class StructuralTaggedError extends Error {
   readonly _tag = "StructuralTaggedError";
 }
 
+class InheritedPropertyTagError extends Error {
+  readonly _tag = "toString";
+}
+
 describe("TaggedError", () => {
   describe("construction", () => {
     it("sets name to tag", () => {
@@ -335,6 +339,67 @@ describe("TaggedError", () => {
         message: "failed",
       });
       expect(matchPartialAppError(error)).toBe("fallback: NetworkError");
+    });
+
+    it("uses the identity fallback in data-first form", () => {
+      const matchWithIdentity = (error: AppError) =>
+        matchErrorPartial(error, {
+          NotFoundError: (e) => `missing: ${e.id}`,
+        });
+      const handled = new NotFoundError({ id: "123", message: "not found" });
+      const unhandled = new NetworkError({
+        url: "https://api.example.com",
+        message: "failed",
+      });
+
+      expect(matchWithIdentity(handled)).toBe("missing: 123");
+      expect(matchWithIdentity(unhandled)).toBe(unhandled);
+    });
+
+    it("uses the identity fallback in data-last form", () => {
+      const matchWithIdentity = matchErrorPartial({
+        NotFoundError: (e) => `handled: ${e._tag}`,
+      });
+      const handled = new NotFoundError({ id: "123", message: "not found" });
+      const unhandled = new ValidationError({ field: "email", message: "invalid" });
+
+      expect(matchWithIdentity(handled)).toBe("handled: NotFoundError");
+      expect(matchWithIdentity(unhandled)).toBe(unhandled);
+    });
+
+    it("is identity for an empty handler map", () => {
+      const error: AppError = new NetworkError({
+        url: "https://api.example.com",
+        message: "failed",
+      });
+
+      expect(matchErrorPartial(error, {})).toBe(error);
+      expect(matchErrorPartial({})(error)).toBe(error);
+    });
+
+    it("returns an unhandled structural tagged error unchanged", () => {
+      const error = new StructuralTaggedError("structural");
+
+      expect(matchErrorPartial(error, {})).toBe(error);
+      expect(matchErrorPartial({})(error)).toBe(error);
+    });
+
+    it("ignores inherited handler properties", () => {
+      const error = new InheritedPropertyTagError("prototype collision");
+
+      expect(matchErrorPartial(error, {})).toBe(error);
+      expect(matchErrorPartial({})(error)).toBe(error);
+      expect(matchErrorPartial(error, {}, (unhandled) => unhandled)).toBe(error);
+    });
+
+    it("calls an explicitly defined handler that shares an inherited property name", () => {
+      const error = new InheritedPropertyTagError("own handler");
+
+      expect(
+        matchErrorPartial(error, {
+          toString: (handled) => `handled: ${handled.message}`,
+        }),
+      ).toBe("handled: own handler");
     });
 
     it("propagates an exception from the selected fallback", () => {

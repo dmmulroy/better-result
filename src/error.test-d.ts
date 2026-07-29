@@ -1,9 +1,10 @@
 import { describe, expectTypeOf, it } from "vitest";
-import { matchError, matchErrorPartial, Result, TaggedError } from "./index";
+import { matchError, matchErrorPartial, type Ok, Result, TaggedError } from "./index";
 
 class ErrorA extends TaggedError("ErrorA")<{}> {}
 class ErrorB extends TaggedError("ErrorB")<{}> {}
 class ErrorC extends TaggedError("ErrorC")<{}> {}
+class DetailedError extends TaggedError("DetailedError")<{ detail: string }> {}
 
 class StructuralTaggedError extends Error {
   readonly _tag = "StructuralTaggedError";
@@ -199,6 +200,90 @@ describe("matchErrorPartial", () => {
       (_err) => 0,
     );
     expectTypeOf(outcome).toEqualTypeOf<"specific" | number>();
+  });
+
+  it("infers handler returns and unhandled errors with data-first identity fallback", () => {
+    const result = Result.err<void, ErrorA | ErrorB | ErrorC>(new ErrorA());
+    const outcome = matchErrorPartial(result.error, {
+      ErrorA: (_err) => "handled" as const,
+    });
+    expectTypeOf(outcome).toEqualTypeOf<"handled" | ErrorB | ErrorC>();
+  });
+
+  it("infers handler returns and unhandled errors with data-last identity fallback", () => {
+    const result = Result.err<void, ErrorA | ErrorB | ErrorC>(new ErrorA());
+    const outcome = matchErrorPartial({
+      ErrorA: (_err) => "handled" as const,
+    })(result.error);
+    expectTypeOf(outcome).toEqualTypeOf<"handled" | ErrorB | ErrorC>();
+  });
+
+  it("accepts a concrete handler annotation in data-last identity form", () => {
+    const result = Result.err<void, DetailedError | ErrorB>(
+      new DetailedError({ detail: "context" }),
+    );
+    const outcome = matchErrorPartial({
+      DetailedError: (error: DetailedError) => Result.ok(error),
+    })(result.error);
+
+    expectTypeOf(outcome).toEqualTypeOf<Ok<DetailedError, never> | ErrorB>();
+  });
+
+  it("rejects a concrete handler annotation with a mismatched tag", () => {
+    const result = Result.err<void, DetailedError | ErrorB>(
+      new DetailedError({ detail: "context" }),
+    );
+    const matcher = matchErrorPartial({
+      // @ts-expect-error - ErrorB does not accept the DetailedError tag
+      DetailedError: (error: ErrorB) => Result.ok(error),
+    });
+
+    matcher(result.error);
+  });
+
+  it("infers the original error union for an empty identity handler map", () => {
+    const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
+
+    expectTypeOf(matchErrorPartial(result.error, {})).toEqualTypeOf<ErrorA | ErrorB>();
+    expectTypeOf(matchErrorPartial({})(result.error)).toEqualTypeOf<ErrorA | ErrorB>();
+  });
+
+  it("drops the identity branch when every error is handled", () => {
+    const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
+    const outcome = matchErrorPartial(result.error, {
+      ErrorA: () => "A" as const,
+      ErrorB: () => 2 as const,
+    });
+    expectTypeOf(outcome).toEqualTypeOf<"A" | 2>();
+  });
+
+  it("keeps E conservatively with explicit E and R for identity fallback", () => {
+    const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
+    const handlers = {
+      ErrorA: () => "A",
+    };
+
+    const dataFirst = matchErrorPartial<ErrorA | ErrorB, string>(result.error, handlers);
+    const dataLast = matchErrorPartial<ErrorA | ErrorB, string>(handlers)(result.error);
+    expectTypeOf(dataFirst).toEqualTypeOf<string | ErrorA | ErrorB>();
+    expectTypeOf(dataLast).toEqualTypeOf<string | ErrorA | ErrorB>();
+  });
+
+  it("excludes handled errors with explicit E, R, and H for identity fallback", () => {
+    const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
+    const handlers = {
+      ErrorA: () => "A",
+    };
+
+    const dataFirst = matchErrorPartial<ErrorA | ErrorB, string, typeof handlers>(
+      result.error,
+      handlers,
+    );
+    const dataLast = matchErrorPartial<ErrorA | ErrorB, string, typeof handlers>(handlers)(
+      result.error,
+    );
+    expectTypeOf(dataFirst).toEqualTypeOf<string | ErrorB>();
+    expectTypeOf(dataLast).toEqualTypeOf<string | ErrorB>();
   });
 
   it("infers only the fallback return for an empty handler map", () => {
