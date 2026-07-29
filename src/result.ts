@@ -104,22 +104,39 @@ const tryFn: {
   return result;
 };
 
+type RetryPredicate<E> = (error: E, context: TryPromiseContext) => boolean;
+
+type RetryOptions<E> =
+  | {
+      times: number;
+      delayMs: number;
+      backoff: "linear" | "constant" | "exponential";
+      /** Predicate to determine if an error should trigger a retry. Defaults to always retry. */
+      shouldRetry?: RetryPredicate<E>;
+      /**
+       * Shortens each delay by a random amount so simultaneous retries don't fire in lockstep.
+       * A number from 0 through 1 is the maximum reduction — e.g. `0.3` may shave up to
+       * 30% off each delay. `true` allows full reduction (down to 0). Defaults to no jitter.
+       */
+      jitter?: boolean | number;
+    }
+  | {
+      times: number;
+      /** Returns the final delay in milliseconds for the next retry. */
+      delayMs: (error: E, context: TryPromiseContext) => number;
+      /** Dynamic delays cannot be combined with static backoff. */
+      backoff?: never;
+      /** Dynamic delays cannot be combined with static jitter. */
+      jitter?: never;
+      /** Predicate to determine if an error should trigger a retry. Defaults to always retry. */
+      shouldRetry?: RetryPredicate<E>;
+    };
+
 type RetryConfig<E = unknown> = {
   /** Abort signal forwarded unchanged to every try and retry-decision context. */
   signal?: AbortSignal;
-  retry?: {
-    times: number;
-    delayMs: number;
-    backoff: "linear" | "constant" | "exponential";
-    /** Predicate to determine if an error should trigger a retry. Defaults to always retry. */
-    shouldRetry?: (error: E, context: TryPromiseContext) => boolean;
-    /**
-     * Shortens each delay by a random amount so simultaneous retries don't fire in lockstep.
-     * A number from 0 through 1 is the maximum reduction — e.g. `0.3` may shave up to
-     * 30% off each delay. `true` allows full reduction (down to 0). Defaults to no jitter.
-     */
-    jitter?: boolean | number;
-  };
+  /** Bounded retry configuration with either a static backoff or error-dependent delay. */
+  retry?: RetryOptions<E>;
 };
 
 const tryPromise: {
@@ -171,14 +188,18 @@ const tryPromise: {
     return execute({ attempt: 1, signal: config?.signal });
   }
 
-  const getBaseDelay = (retryAttempt: number): number => {
-    switch (retry.backoff) {
+  const getStaticRetryDelay = (
+    delayMs: number,
+    backoff: "linear" | "constant" | "exponential",
+    retryAttempt: number,
+  ): number => {
+    switch (backoff) {
       case "constant":
-        return retry.delayMs;
+        return delayMs;
       case "linear":
-        return retry.delayMs * (retryAttempt + 1);
+        return delayMs * (retryAttempt + 1);
       case "exponential":
-        return retry.delayMs * 2 ** retryAttempt;
+        return delayMs * 2 ** retryAttempt;
     }
   };
 
@@ -188,10 +209,9 @@ const tryPromise: {
   }
   const jitterFactor = jitter === true ? 1 : jitter === false ? 0 : jitter;
 
-  const getDelay = (retryAttempt: number): number => {
-    const baseDelay = getBaseDelay(retryAttempt);
-    if (jitterFactor === 0) return baseDelay;
-    return baseDelay * (1 - jitterFactor + Math.random() * jitterFactor);
+  const applyStaticRetryJitter = (baseDelayMs: number): number => {
+    if (jitterFactor === 0) return baseDelayMs;
+    return baseDelayMs * (1 - jitterFactor + Math.random() * jitterFactor);
   };
 
   const sleepForRetryDelay = (ms: number, signal?: AbortSignal): Promise<boolean> =>
@@ -215,7 +235,6 @@ const tryPromise: {
 
   let context: TryPromiseContext = { attempt: 1, signal: config.signal };
   let result = await execute(context);
-
   const shouldRetryFn = retry.shouldRetry ?? (() => true);
 
   for (let retryAttempt = 0; retryAttempt < retry.times; retryAttempt++) {
@@ -226,7 +245,24 @@ const tryPromise: {
       "shouldRetry predicate threw",
     );
     if (!shouldContinue) break;
-    const delayCompleted = await sleepForRetryDelay(getDelay(retryAttempt), context.signal);
+
+    let delayMs: number;
+    if (typeof retry.delayMs === "function") {
+      const getDynamicRetryDelay = retry.delayMs;
+      delayMs = tryOrPanic(
+        () => getDynamicRetryDelay(error, context),
+        "Result.tryPromise delayMs callback threw",
+      );
+    } else {
+      if (retry.backoff === undefined) {
+        throw panic("Result.tryPromise static retry delay requires backoff");
+      }
+      delayMs = applyStaticRetryJitter(
+        getStaticRetryDelay(retry.delayMs, retry.backoff, retryAttempt),
+      );
+    }
+
+    const delayCompleted = await sleepForRetryDelay(delayMs, context.signal);
     if (!delayCompleted || context.signal?.aborted) break;
     context = { attempt: context.attempt + 1, signal: config.signal };
     result = await execute(context);
@@ -929,6 +965,18 @@ export const Result = {
    *     delayMs: 100,
    *     backoff: "exponential",
    *     shouldRetry: e => e._tag === "RetryableError"
+   *   }
+   * })
+   *
+   * @example
+   * // Dynamic delay: the typed error determines when the next retry runs
+   * await Result.tryPromise({
+   *   try: () => callApi(url),
+   *   catch: e => new ApiError({ cause: e, retryAfterMs: readRetryAfter(e) })
+   * }, {
+   *   retry: {
+   *     times: 3,
+   *     delayMs: error => error.retryAfterMs
    *   }
    * })
    *

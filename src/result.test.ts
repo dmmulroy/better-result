@@ -912,6 +912,82 @@ describe("Result", () => {
       }
     });
 
+    it("uses the typed error and failed-attempt context to choose each delay", async () => {
+      let attempts = 0;
+      const delayContexts: TryPromiseContext[] = [];
+      const start = Date.now();
+
+      const result = await Result.tryPromise(
+        {
+          try: () => {
+            attempts++;
+            if (attempts === 1) throw new Error("rate limited");
+            return Promise.resolve("success");
+          },
+          catch: () => ({ kind: "rate-limit" as const, retryAfterMs: 20 }),
+        },
+        {
+          retry: {
+            times: 1,
+            delayMs: (error, context) => {
+              expectTypeOf(error).toEqualTypeOf<{
+                kind: "rate-limit";
+                retryAfterMs: number;
+              }>();
+              expectTypeOf(context).toEqualTypeOf<TryPromiseContext>();
+              delayContexts.push(context);
+              return error.retryAfterMs;
+            },
+          },
+        },
+      );
+
+      expect(result.unwrap()).toBe("success");
+      expect(attempts).toBe(2);
+      expect(delayContexts.map(({ attempt }) => attempt)).toEqual([1]);
+      expect(Date.now() - start).toBeGreaterThanOrEqual(15);
+    });
+
+    it("enforces times when delayMs is dynamic", async () => {
+      let attempts = 0;
+      let delayCalculations = 0;
+
+      const result = await Result.tryPromise(
+        () => {
+          attempts++;
+          return Promise.reject(new Error("fail"));
+        },
+        {
+          retry: {
+            times: 3,
+            delayMs: (error, context) => {
+              expectTypeOf(error).toEqualTypeOf<UnhandledException>();
+              expectTypeOf(context).toEqualTypeOf<TryPromiseContext>();
+              delayCalculations++;
+              return 0;
+            },
+          },
+        },
+      );
+
+      expect(Result.isError(result)).toBe(true);
+      expect(attempts).toBe(4);
+      expect(delayCalculations).toBe(3);
+    });
+
+    it("throws Panic when a dynamic delay callback throws", async () => {
+      await expect(
+        Result.tryPromise(() => Promise.reject(new Error("fail")), {
+          retry: {
+            times: 1,
+            delayMs: () => {
+              throw new Error("delay callback bug");
+            },
+          },
+        }),
+      ).rejects.toBeInstanceOf(Panic);
+    });
+
     it("respects shouldRetry predicate", async () => {
       let attempts = 0;
       const result = await Result.tryPromise(
@@ -2987,6 +3063,29 @@ describe("Type Inference", () => {
           },
         );
         expectTypeOf(custom).toEqualTypeOf<Promise<ResultType<string, ErrorA>>>();
+      };
+
+      expectTypeOf(compileTimeOnly).toEqualTypeOf<() => void>();
+    });
+
+    it("keeps backoff and jitter exclusive to static delays", () => {
+      const compileTimeOnly = () => {
+        // @ts-expect-error dynamic delayMs cannot be combined with static backoff.
+        Result.tryPromise(() => Promise.resolve(42), {
+          retry: {
+            times: 1,
+            delayMs: () => 100,
+            backoff: "constant",
+          },
+        });
+        // @ts-expect-error dynamic delayMs cannot be combined with static jitter.
+        Result.tryPromise(() => Promise.resolve(42), {
+          retry: {
+            times: 1,
+            delayMs: () => 100,
+            jitter: true,
+          },
+        });
       };
 
       expectTypeOf(compileTimeOnly).toEqualTypeOf<() => void>();

@@ -312,9 +312,31 @@ const result = await Result.tryPromise(
 );
 ```
 
+### Dynamic Retry Delays
+
+Pass a callback as `delayMs` when each error determines how long to wait. The callback receives the typed error and the context for the failed attempt. `times` remains required so every retry policy has an explicit limit:
+
+```ts
+const result = await Result.tryPromise(
+  {
+    try: () => callApi(url),
+    catch: (cause) => parseApiError(cause),
+  },
+  {
+    retry: {
+      times: 3,
+      shouldRetry: (error) => error.retryable,
+      delayMs: (error, { attempt }) => error.retryAfterMs,
+    },
+  },
+);
+```
+
+A dynamic `delayMs` returns the final delay before the next attempt and cannot be combined with `backoff` or `jitter`. If the callback throws, `Result.tryPromise` throws a `Panic`.
+
 ### Async Retry Decisions
 
-For retry decisions that require async operations (rate limits, feature flags, etc.), enrich the error in the `catch` handler instead of making `shouldRetry` async:
+Retry callbacks are synchronous. For decisions that require async operations (rate limits, feature flags, etc.), enrich the error in the `catch` handler before making the retry decision:
 
 ```ts
 class ApiError extends TaggedError("ApiError")<{
