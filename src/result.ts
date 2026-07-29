@@ -159,7 +159,24 @@ const tryPromise: {
     }
   };
 
-  const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+  const sleepForRetryDelay = (ms: number, signal?: AbortSignal): Promise<boolean> =>
+    new Promise((resolve) => {
+      if (signal?.aborted) {
+        resolve(false);
+        return;
+      }
+
+      const onAbort = () => {
+        clearTimeout(timeout);
+        resolve(false);
+      };
+      const timeout = setTimeout(() => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve(true);
+      }, ms);
+
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
 
   let context: TryContext = { attempt: 1, signal: config.signal };
   let result = await execute(context);
@@ -167,14 +184,15 @@ const tryPromise: {
   const shouldRetryFn = retry.shouldRetry ?? (() => true);
 
   for (let retryAttempt = 0; retryAttempt < retry.times; retryAttempt++) {
-    if (result.status !== "error") break;
+    if (result.status !== "error" || context.signal?.aborted) break;
     const error = result.error;
     const shouldContinue = tryOrPanic(
       () => shouldRetryFn(error, context),
       "shouldRetry predicate threw",
     );
     if (!shouldContinue) break;
-    await sleep(getDelay(retryAttempt));
+    const delayCompleted = await sleepForRetryDelay(getDelay(retryAttempt), context.signal);
+    if (!delayCompleted || context.signal?.aborted) break;
     context = { attempt: context.attempt + 1, signal: config.signal };
     result = await execute(context);
   }
@@ -562,7 +580,7 @@ export const Result = {
    * Executes async function, wraps result/error in Result with retry support.
    *
    * @example
-   * // Basic retry with cancellation forwarded to each attempt
+   * // Basic retry with cancellation forwarded to each attempt and retry delay
    * await Result.tryPromise(({ signal }) => fetch(url, { signal }), {
    *   signal: abortController.signal,
    *   retry: { times: 3, delayMs: 100, backoff: "exponential" }

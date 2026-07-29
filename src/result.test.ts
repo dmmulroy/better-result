@@ -345,16 +345,57 @@ describe("Result", () => {
           expect(signal?.aborted).toBe(true);
           return Promise.resolve(42);
         },
-        { signal: abortController.signal },
+        {
+          signal: abortController.signal,
+          retry: {
+            times: 3,
+            delayMs: 1,
+            backoff: "constant",
+          },
+        },
       );
 
       expect(invoked).toBe(true);
       expect(result.unwrap()).toBe(42);
     });
 
-    it("can stop retries when the abort signal is aborted", async () => {
+    it("cancels an in-flight abort-aware operation and prevents retries", async () => {
       const abortController = new AbortController();
       let attempts = 0;
+
+      const pending = Result.tryPromise(
+        ({ signal }) => {
+          attempts++;
+          return new Promise<never>((_resolve, reject) => {
+            signal?.addEventListener("abort", () => reject(new Error("operation aborted")), {
+              once: true,
+            });
+          });
+        },
+        {
+          signal: abortController.signal,
+          retry: {
+            times: 3,
+            delayMs: 10_000,
+            backoff: "constant",
+          },
+        },
+      );
+
+      abortController.abort();
+      const result = await pending;
+
+      expect(Result.isError(result)).toBe(true);
+      expect(attempts).toBe(1);
+      if (Result.isError(result)) {
+        expect(result.error.cause).toBeInstanceOf(Error);
+      }
+    });
+
+    it("automatically stops retries when the abort signal is aborted", async () => {
+      const abortController = new AbortController();
+      let attempts = 0;
+      let retryDecisions = 0;
 
       const result = await Result.tryPromise(
         {
@@ -378,7 +419,8 @@ describe("Result", () => {
                 cause: unknown;
               }>();
               expectTypeOf(context.signal).toEqualTypeOf<AbortSignal | undefined>();
-              return context.signal?.aborted !== true;
+              retryDecisions++;
+              return true;
             },
           },
         },
@@ -386,6 +428,117 @@ describe("Result", () => {
 
       expect(Result.isError(result)).toBe(true);
       expect(attempts).toBe(1);
+      expect(retryDecisions).toBe(0);
+      if (Result.isError(result)) {
+        expect(result.error.kind).toBe("request-failure");
+      }
+    });
+
+    it("interrupts a pending retry delay when the abort signal is aborted", async () => {
+      const abortController = new AbortController();
+      let attempts = 0;
+      let approveRetry = () => {};
+      const retryApproved = new Promise<void>((resolve) => {
+        approveRetry = resolve;
+      });
+
+      const pending = Result.tryPromise(
+        () => {
+          attempts++;
+          return Promise.reject(new Error("fail"));
+        },
+        {
+          signal: abortController.signal,
+          retry: {
+            times: 3,
+            delayMs: 10_000,
+            backoff: "constant",
+            shouldRetry: () => {
+              approveRetry();
+              return true;
+            },
+          },
+        },
+      );
+
+      await retryApproved;
+      abortController.abort();
+      const result = await pending;
+
+      expect(Result.isError(result)).toBe(true);
+      expect(attempts).toBe(1);
+    });
+
+    it("does not start a retry when shouldRetry aborts the signal", async () => {
+      const abortController = new AbortController();
+      let attempts = 0;
+      let retryDecisions = 0;
+
+      const result = await Result.tryPromise(
+        () => {
+          attempts++;
+          return Promise.reject(new Error("fail"));
+        },
+        {
+          signal: abortController.signal,
+          retry: {
+            times: 3,
+            delayMs: 10_000,
+            backoff: "constant",
+            shouldRetry: (_error, { signal }) => {
+              retryDecisions++;
+              abortController.abort();
+              expect(signal?.aborted).toBe(true);
+              return true;
+            },
+          },
+        },
+      );
+
+      expect(Result.isError(result)).toBe(true);
+      expect(attempts).toBe(1);
+      expect(retryDecisions).toBe(1);
+    });
+
+    it("returns the latest typed error when a later retry delay is interrupted", async () => {
+      const abortController = new AbortController();
+      let attempts = 0;
+      let observeSecondFailure = () => {};
+      const secondFailureObserved = new Promise<void>((resolve) => {
+        observeSecondFailure = resolve;
+      });
+
+      const pending = Result.tryPromise(
+        () => {
+          attempts++;
+          return Promise.reject(new Error(`attempt ${attempts} failed`));
+        },
+        {
+          signal: abortController.signal,
+          retry: {
+            times: 3,
+            delayMs: 1,
+            backoff: "constant",
+            shouldRetry: (_error, { attempt }) => {
+              if (attempt === 2) observeSecondFailure();
+              return true;
+            },
+          },
+        },
+      );
+
+      await secondFailureObserved;
+      abortController.abort();
+      const result = await pending;
+
+      expect(Result.isError(result)).toBe(true);
+      expect(attempts).toBe(2);
+      if (Result.isError(result)) {
+        expect(result.error.cause).toBeInstanceOf(Error);
+        if (result.error.cause instanceof Error) {
+          expect(result.error.cause.message).toBe("attempt 2 failed");
+        }
+      }
     });
 
     it("passes the abort signal and failed attempt to shouldRetry", async () => {
