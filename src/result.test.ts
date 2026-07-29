@@ -301,6 +301,125 @@ describe("Result", () => {
       expect(Result.isError(result)).toBe(true);
     });
 
+    it("passes the configured abort signal to the try context without retries", async () => {
+      const abortController = new AbortController();
+
+      const result = await Result.tryPromise(
+        ({ signal }) => {
+          expectTypeOf(signal).toEqualTypeOf<AbortSignal | undefined>();
+          expect(signal).toBe(abortController.signal);
+          return Promise.resolve(42);
+        },
+        { signal: abortController.signal },
+      );
+
+      expect(result.unwrap()).toBe(42);
+    });
+
+    it("passes the configured abort signal to the object overload", async () => {
+      const abortController = new AbortController();
+
+      const result = await Result.tryPromise(
+        {
+          try: ({ signal }) => {
+            expectTypeOf(signal).toEqualTypeOf<AbortSignal | undefined>();
+            expect(signal).toBe(abortController.signal);
+            return Promise.resolve(42);
+          },
+          catch: () => new Error("failed"),
+        },
+        { signal: abortController.signal },
+      );
+
+      expect(result.unwrap()).toBe(42);
+    });
+
+    it("still invokes the try callback when the abort signal is already aborted", async () => {
+      const abortController = new AbortController();
+      abortController.abort();
+      let invoked = false;
+
+      const result = await Result.tryPromise(
+        ({ signal }) => {
+          invoked = true;
+          expect(signal?.aborted).toBe(true);
+          return Promise.resolve(42);
+        },
+        { signal: abortController.signal },
+      );
+
+      expect(invoked).toBe(true);
+      expect(result.unwrap()).toBe(42);
+    });
+
+    it("can stop retries when the abort signal is aborted", async () => {
+      const abortController = new AbortController();
+      let attempts = 0;
+
+      const result = await Result.tryPromise(
+        {
+          try: ({ signal }) => {
+            attempts++;
+            expect(signal).toBe(abortController.signal);
+            abortController.abort();
+            return Promise.reject(new Error("cancelled"));
+          },
+          catch: (cause) => ({ kind: "request-failure" as const, cause }),
+        },
+        {
+          signal: abortController.signal,
+          retry: {
+            times: 3,
+            delayMs: 1,
+            backoff: "constant",
+            shouldRetry: (error, context) => {
+              expectTypeOf(error).toEqualTypeOf<{
+                kind: "request-failure";
+                cause: unknown;
+              }>();
+              expectTypeOf(context.signal).toEqualTypeOf<AbortSignal | undefined>();
+              return context.signal?.aborted !== true;
+            },
+          },
+        },
+      );
+
+      expect(Result.isError(result)).toBe(true);
+      expect(attempts).toBe(1);
+    });
+
+    it("passes the abort signal and failed attempt to shouldRetry", async () => {
+      const abortController = new AbortController();
+      const tryContexts: Array<{ attempt: number; signal?: AbortSignal }> = [];
+      const retryContexts: Array<{ attempt: number; signal?: AbortSignal }> = [];
+
+      const result = await Result.tryPromise(
+        (context) => {
+          tryContexts.push(context);
+          return Promise.reject(new Error("fail"));
+        },
+        {
+          signal: abortController.signal,
+          retry: {
+            times: 2,
+            delayMs: 1,
+            backoff: "constant",
+            shouldRetry: (_error, context) => {
+              expectTypeOf(context.signal).toEqualTypeOf<AbortSignal | undefined>();
+              retryContexts.push(context);
+              return true;
+            },
+          },
+        },
+      );
+
+      expect(Result.isError(result)).toBe(true);
+      expect(tryContexts.map(({ attempt }) => attempt)).toEqual([1, 2, 3]);
+      expect(retryContexts.map(({ attempt }) => attempt)).toEqual([1, 2]);
+      expect(tryContexts.every(({ signal }) => signal === abortController.signal)).toBe(true);
+      expect(retryContexts.every(({ signal }) => signal === abortController.signal)).toBe(true);
+    });
+
     it("supports retry with exponential backoff", async () => {
       let attempts = 0;
       const start = Date.now();

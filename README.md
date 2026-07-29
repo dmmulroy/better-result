@@ -266,6 +266,24 @@ const result = await Result.tryPromise(({ attempt }) => fetchWithRetryContext(ur
 });
 ```
 
+Pass an abort signal in the top-level config to forward it to every attempt. The same signal and the failed attempt number are available in the `shouldRetry` context:
+
+```ts
+const controller = new AbortController();
+
+const result = await Result.tryPromise(({ signal }) => fetch(url, { signal }), {
+  signal: controller.signal,
+  retry: {
+    times: 3,
+    delayMs: 100,
+    backoff: "constant",
+    shouldRetry: (_error, { signal }) => !signal?.aborted,
+  },
+});
+```
+
+`Result.tryPromise` forwards the signal but does not abort operations or retry delays itself. The try callback must pass it to abort-aware operations, and `shouldRetry` controls whether an aborted failure is retried.
+
 ### Conditional Retry
 
 Retry only for specific error types using `shouldRetry`:
