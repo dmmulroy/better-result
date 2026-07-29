@@ -78,9 +78,9 @@ export const TaggedError = <Tag extends string>(tag: Tag): TaggedErrorClass<Tag>
       return panic("Unreachable: Err yielded in TaggedError but generator continued", this);
     }
 
-    /** Type guard for this error class */
-    static is(value: unknown): value is TaggedErrorInstance<Tag, unknown> {
-      return value instanceof Base;
+    /** Type guard for the concrete error class on which this method is called. */
+    static is<C extends TaggedErrorConstructor>(this: C, value: unknown): value is InstanceType<C> {
+      return value instanceof this;
     }
   }
 
@@ -100,13 +100,16 @@ export type TaggedErrorInstance<Tag extends string, Props> = IterableError & {
   toJSON(): object;
 } & Readonly<Props>;
 
+/** Constructor used to infer the concrete class for static TaggedError guards. */
+type TaggedErrorConstructor = abstract new (...args: never[]) => object;
+
 /** Class type produced by TaggedError factory */
 export type TaggedErrorClass<Tag extends string> = {
   new <Props extends Record<string, unknown> = {}>(
     ...args: keyof Props extends never ? [args?: {}] : [args: Props]
   ): TaggedErrorInstance<Tag, Props>;
-  /** Type guard for this error class */
-  is(value: unknown): value is TaggedErrorInstance<Tag, unknown>;
+  /** Type guard for the concrete error class on which this method is called. */
+  is<C extends TaggedErrorConstructor>(this: C, value: unknown): value is InstanceType<C>;
 };
 
 /** Handler map for exhaustive matching */

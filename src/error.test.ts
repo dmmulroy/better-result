@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   TaggedError,
   UnhandledException,
+  ResultDeserializationError,
   matchError,
   matchErrorPartial,
   isTaggedError,
@@ -113,6 +114,52 @@ describe("TaggedError", () => {
 
     it("returns false for non-errors", () => {
       expect(NotFoundError.is({ _tag: "NotFoundError" })).toBe(false);
+    });
+
+    it("narrows unknown to the concrete TaggedError subclass", () => {
+      const error: unknown = new NotFoundError({ id: "123", message: "not found" });
+
+      if (!NotFoundError.is(error)) {
+        throw new Error("Expected NotFoundError.is to recognize its own instance");
+      }
+
+      const _error: NotFoundError = error;
+      const id: string = error.id;
+      const tag: "NotFoundError" = error._tag;
+      // @ts-expect-error - narrowing must not add properties from another TaggedError subclass
+      void error.field;
+      void _error;
+      expect({ id, tag }).toEqual({ id: "123", tag: "NotFoundError" });
+    });
+
+    it("narrows built-in TaggedError subclasses with custom constructors", () => {
+      const invalidValue = { status: "invalid" };
+      const error: unknown = new ResultDeserializationError({ value: invalidValue });
+
+      if (!ResultDeserializationError.is(error)) {
+        throw new Error("Expected ResultDeserializationError.is to recognize its own instance");
+      }
+
+      const _error: ResultDeserializationError = error;
+      const value: unknown = error.value;
+      void _error;
+      expect(value).toBe(invalidValue);
+    });
+
+    it("distinguishes subclasses that share a TaggedError base class", () => {
+      const SharedError = TaggedError("SharedError");
+      class FooError extends SharedError<{ foo: string }> {}
+      class BarError extends SharedError<{ bar: string }> {}
+      class ChildFooError extends FooError {}
+
+      const fooError = new FooError({ foo: "foo" });
+      const barError = new BarError({ bar: "bar" });
+      const childFooError = new ChildFooError({ foo: "child" });
+
+      expect(FooError.is(fooError)).toBe(true);
+      expect(FooError.is(childFooError)).toBe(true);
+      expect(FooError.is(barError)).toBe(false);
+      expect(BarError.is(fooError)).toBe(false);
     });
 
     it("FooError.is(fooError) is true", () => {
