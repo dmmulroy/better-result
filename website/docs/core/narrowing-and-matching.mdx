@@ -74,7 +74,7 @@ displayName(result);
 const response = result.match({
   ok: (user) => ({ status: 200, body: user }),
   err: (error) =>
-    matchError(error, {
+    error.match({
       UserNotFound: () => ({ status: 404, body: null }),
       DatabaseUnavailable: () => ({ status: 503, body: null }),
     }),

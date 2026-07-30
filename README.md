@@ -497,16 +497,16 @@ Build exhaustive error handling with discriminated unions:
 ```ts
 import { Result, TaggedError, matchError, matchErrorPartial } from "better-result";
 
-// Factory API: TaggedError("Tag")<Props>()
+// Factory API: TaggedError("Tag")<Props>
 class NotFoundError extends TaggedError("NotFoundError")<{
   id: string;
   message: string;
-}>() {}
+}> {}
 
 class ValidationError extends TaggedError("ValidationError")<{
   field: string;
   message: string;
-}>() {}
+}> {}
 
 type AppError = NotFoundError | ValidationError;
 
@@ -526,6 +526,16 @@ const describeErrorDirectly = (error: AppError) =>
     NotFoundError: (e) => `Missing: ${e.id}`,
     ValidationError: (e) => `Bad field: ${e.field}`,
   });
+
+// Result error handlers infer the union, so no annotation is needed
+const response = result.match({
+  ok: (user) => ({ status: 200, body: user }),
+  err: (error) =>
+    error.match({
+      NotFoundError: () => ({ status: 404, body: null }),
+      ValidationError: () => ({ status: 400, body: null }),
+    }),
+});
 
 // Partial matching leaves unhandled errors unchanged by default
 const transformed = matchErrorPartial(error, {

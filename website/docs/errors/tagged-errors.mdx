@@ -27,8 +27,20 @@ The class has normal `Error` behavior plus:
 - `_tag === "UserNotFound"` as a string literal;
 - readonly `userId` and other declared properties;
 - `toJSON()`;
+- exhaustive `.match()` by `_tag`;
 - `UserNotFound.is(value)`;
 - iterator support for `yield*`.
+
+## Match an error union
+
+```ts
+const message = error.match({
+  UserNotFound: (error) => `No user ${error.userId}`,
+  PermissionDenied: (error) => `Missing permission ${error.permission}`,
+});
+```
+
+The handler map must cover every variant in the receiver's error union. Each handler receives its concrete error subtype. Use the standalone `matchError` function for structurally tagged errors or data-last matching.
 
 ## Add a computed message
 

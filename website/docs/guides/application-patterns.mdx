@@ -55,7 +55,7 @@ const toHttpResponse = (result: ResultType<User, RegisterUserError>) =>
   result.match({
     ok: (user) => Response.json(user, { status: 201 }),
     err: (error) =>
-      matchError(error, {
+      error.match({
         InvalidCreateUser: (error) => Response.json(error.toJSON(), { status: 400 }),
         EmailTaken: (error) => Response.json(error.toJSON(), { status: 409 }),
         UserStoreUnavailable: () => Response.json({ message: "Try again" }, { status: 503 }),

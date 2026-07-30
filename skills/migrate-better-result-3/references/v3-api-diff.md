@@ -1,6 +1,6 @@
 # Audited 2.10.0 → 3.0 API diff
 
-This reference is derived from the public source and tests between `v2.10.0` and the `3.0` branch at `a43cead`. Verify the installed target declarations when migrating to a later 3.x release.
+This reference is derived from the public source and tests between `v2.10.0` and the `3.0` branch through `c4d0a42`. Verify the installed target declarations when migrating to a later 3.x release.
 
 ## Required source changes
 
@@ -105,6 +105,23 @@ Existing three-argument data-first and two-argument pipeable calls with a fallba
 ## Additive 3.0 APIs
 
 These additions require no migration unless the codebase chooses to adopt them.
+
+### TaggedError instance matching
+
+Every `TaggedError` instance exposes exhaustive `.match(handlers)` with the same handler narrowing and return-union inference as data-first `matchError`:
+
+```ts
+const response = result.match({
+  ok: (user) => ({ status: 200, body: user }),
+  err: (error) =>
+    error.match({
+      UserNotFound: () => ({ status: 404, body: null }),
+      DatabaseUnavailable: () => ({ status: 503, body: null }),
+    }),
+});
+```
+
+No annotation is needed for `error` when the enclosing Result retains its error union. Keep `matchError` for structurally tagged errors and data-last matching. Before adopting the method, search TaggedError payloads and subclasses for an existing member named `match`; rename collisions because payload assignment can shadow the prototype method.
 
 ### Validated codecs and errors
 

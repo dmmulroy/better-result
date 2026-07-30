@@ -14,7 +14,7 @@ class NotFound extends TaggedError("NotFound")<{
 }> {}
 ```
 
-Instances expose `_tag`, declared properties, native Error fields, `toJSON()`, and generator iterator behavior. Concrete classes expose `.is(value)`.
+Instances expose `_tag`, declared properties, native Error fields, `toJSON()`, exhaustive `.match(handlers)`, and generator iterator behavior. Concrete classes expose `.is(value)`.
 
 ## Guards
 
@@ -30,7 +30,8 @@ Instances expose `_tag`, declared properties, native Error fields, `toJSON()`, a
 
 | API                                            | Behavior                                             |
 | ---------------------------------------------- | ---------------------------------------------------- |
-| `matchError(error, handlers)`                  | Exhaustive match over every `_tag`                   |
+| `error.match(handlers)`                        | Exhaustive instance match over every `_tag`          |
+| `matchError(error, handlers)`                  | Exhaustive standalone match over every `_tag`        |
 | `matchError(handlers)(error)`                  | Data-last exhaustive match                           |
 | `matchErrorPartial(error, handlers)`           | Handle selected tags; return others unchanged        |
 | `matchErrorPartial(error, handlers, fallback)` | Handle selected tags; transform others with fallback |

@@ -8,7 +8,7 @@ This example parses an environment value, validates it, and builds a server addr
 ## 1. Define errors callers can distinguish
 
 ```ts
-import { Result, TaggedError, matchError, type Result as ResultType } from "better-result";
+import { Result, TaggedError, type Result as ResultType } from "better-result";
 
 class MissingEnv extends TaggedError("MissingEnv")<{
   name: string;
@@ -68,7 +68,7 @@ const exitCode = readServerAddress().match({
   },
   err: (error) => {
     console.error(
-      matchError(error, {
+      error.match({
         MissingEnv: (missing) => `Configuration missing: ${missing.name}`,
         InvalidPort: (invalid) => `Invalid PORT ${JSON.stringify(invalid.input)}`,
       }),
@@ -78,7 +78,7 @@ const exitCode = readServerAddress().match({
 });
 ```
 
-Adding a new tagged error to this workflow makes the exhaustive `matchError` handlers fail to type-check until you decide how to present it.
+Adding a new tagged error to this workflow makes the exhaustive `.match()` handlers fail to type-check until you decide how to present it.
 
 ## Next steps
 

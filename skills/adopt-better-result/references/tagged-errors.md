@@ -63,6 +63,19 @@ Record every `UnhandledException` fallback in the adoption report or implementat
 
 ## Design for handling
 
-Use discriminated error unions and exhaustive `matchError` handling at decision boundaries. Error fields should provide the facts required for retries, status mapping, compensation, logging, and user presentation without parsing the message string.
+Use discriminated error unions and exhaustive matching at decision boundaries. Prefer the `error.match({ ... })` instance method when every variant is created by `TaggedError`; its receiver supplies the complete error union and each handler narrows to its concrete variant. Use the standalone `matchError(error, handlers)` function for structurally tagged errors or its data-last form.
+
+```ts
+const response = result.match({
+  ok: (user) => ({ status: 200, body: user }),
+  err: (error) =>
+    error.match({
+      UserNotFound: () => ({ status: 404, body: null }),
+      UserStoreUnavailable: () => ({ status: 503, body: null }),
+    }),
+});
+```
+
+Error fields should provide the facts required for retries, status mapping, compensation, logging, and user presentation without parsing the message string. Treat `match` as a reserved TaggedError instance method; do not declare an error payload property or subclass method with that name.
 
 For errors crossing serialized boundaries, apply [`result-boundaries.md`](result-boundaries.md). Expose stable public codes and safe fields; reconstruct the appropriate tagged error during trusted deserialization when the receiving side needs domain behavior.

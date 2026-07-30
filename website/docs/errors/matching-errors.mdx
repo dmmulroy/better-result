@@ -3,7 +3,43 @@ title: Matching errors
 description: Handle tagged-error unions exhaustively or partially with inferred handler return unions.
 ---
 
-## Exhaustive `matchError`
+## Exhaustive instance matching
+
+Every `TaggedError` instance has a `.match()` method:
+
+```ts
+const message = error.match({
+  UserNotFound: (error) => `No user ${error.userId}`,
+  PermissionDenied: (error) => `Missing permission ${error.permission}`,
+});
+```
+
+Every `_tag` in the receiver union needs a handler. Handler parameters narrow to their exact error class. Different handler outputs produce a return union.
+
+```ts
+const outcome = error.match({
+  UserNotFound: () => 404,
+  PermissionDenied: () => "forbidden" as const,
+});
+// number | "forbidden"
+```
+
+This composes directly inside a `Result` error branch without annotating the inferred error:
+
+```ts
+const response = result.match({
+  ok: (user) => ({ status: 200, body: user }),
+  err: (error) =>
+    error.match({
+      UserNotFound: () => ({ status: 404, body: null }),
+      DatabaseUnavailable: () => ({ status: 503, body: null }),
+    }),
+});
+```
+
+## Standalone `matchError`
+
+Use `matchError(error, handlers)` when working with structurally tagged errors that were not created by `TaggedError`:
 
 ```ts
 const message = matchError(error, {
@@ -12,15 +48,7 @@ const message = matchError(error, {
 });
 ```
 
-Every `_tag` in the input union needs a handler. Handler parameters narrow to their exact error class. Different handler outputs produce a return union.
-
-```ts
-const outcome = matchError(error, {
-  UserNotFound: () => 404,
-  PermissionDenied: () => "forbidden" as const,
-});
-// number | "forbidden"
-```
+The standalone function has the same exhaustive narrowing and return inference as `.match()`.
 
 ## Data-last matching
 
