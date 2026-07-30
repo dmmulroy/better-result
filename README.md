@@ -714,16 +714,16 @@ Create a codec once and let its schemas infer the payload types. For already ser
 
 ```ts
 // 3.0
-const LegacyLikeCodec = Result.codec({
-  serialize: { ok: UserWireSchema, err: ValidationErrorWireSchema },
-  deserialize: { ok: UserWireSchema, err: ValidationErrorWireSchema },
+const UserResultCodec = Result.codec({
+  serialize: { ok: UserToWireSchema, err: ValidationToErrorWireSchema },
+  deserialize: { ok: UserFromWireSchema, err: ValidationFromErrorWireSchema },
 });
 
 const wirePayloadResult = Result.ok(userWire);
-const wireResult = await LegacyLikeCodec.serialize(wirePayloadResult);
+const wireResult = await UserResultCodec.serialize(wirePayloadResult);
 // Result<SerializedResult<UserWire, ValidationErrorWire>, ResultSerializationError>
 
-const decoded = await LegacyLikeCodec.deserialize(input);
+const decoded = await UserResultCodec.deserialize(input);
 // Result<UserWire, ValidationErrorWire | ResultDeserializationError>
 ```
 
@@ -810,60 +810,15 @@ Migration differences:
 
 ## Agents & AI
 
-better-result ships with portable `SKILL.md` skills instead of an interactive CLI.
+The portable [`adopt-better-result`](skills/adopt-better-result/SKILL.md) skill guides compatible coding agents through either a repository-wide error-handling audit or one named vertical migration slice.
 
-### Available skills
-
-- `better-result-adopt` — adopt `better-result` in an existing codebase
-- `better-result-migrate-v2` — migrate v1 `TaggedError` usage to the v2 API
-
-These skills are designed to work with SKILL.md-compatible agents and skills.sh-compatible tooling.
-
-### Install with skills.sh-compatible tooling
+Install it with skills.sh-compatible tooling:
 
 ```sh
-npx skills add dmmulroy/better-result@better-result-adopt
-npx skills add dmmulroy/better-result@better-result-migrate-v2
+npx skills add dmmulroy/better-result@adopt-better-result
 ```
 
-To install globally without prompts:
-
-```sh
-npx skills add dmmulroy/better-result@better-result-adopt -g -y
-```
-
-### Manual installation
-
-If your agent does not support skills.sh installation, copy one of these directories into the agent's skills folder:
-
-- `skills/better-result-adopt/`
-- `skills/better-result-migrate-v2/`
-
-### What the skills do
-
-`better-result-adopt` guides an agent through:
-
-- converting try/catch to `Result.try` / `Result.tryPromise`
-- defining `TaggedError` classes for domain errors
-- refactoring nested error handling into `Result.gen`
-- replacing nullable or sentinel error returns with `Result`
-
-`better-result-migrate-v2` guides an agent through:
-
-- migrating `TaggedError` classes from v1 to v2 factory syntax
-- updating constructor call sites to the new object form
-- replacing `TaggedError.match*` helpers with standalone helpers
-- updating imports and verifying no old API usages remain
-
-### Optional source context
-
-For richer AI context in a consuming project:
-
-```sh
-npx opensrc better-result
-```
-
-See [skills/README.md](skills/README.md) for a concise skill-install reference.
+See [`skills/README.md`](skills/README.md) for manual installation and usage details.
 
 ## License
 

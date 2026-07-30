@@ -1,38 +1,23 @@
-# better-result Skills
+# better-result skills
 
-Portable `SKILL.md` skills for adopting and migrating `better-result` in SKILL.md-compatible agents.
+Portable skills for adopting `better-result` with compatible coding agents.
 
-## Available Skills
+## Available skill
 
-- `better-result-adopt` — adopt `better-result` in an existing codebase
-- `better-result-migrate-v2` — migrate v1 `TaggedError` usage to the v2 API
+- [`adopt-better-result`](adopt-better-result/SKILL.md) — audit repository-wide error handling and propose an adoption plan, or implement one named vertical migration slice.
 
-## Install with skills.sh-compatible tooling
+## Install
 
-```sh
-npx skills add dmmulroy/better-result@better-result-adopt
-npx skills add dmmulroy/better-result@better-result-migrate-v2
-```
-
-To install globally without prompts:
+With skills.sh-compatible tooling:
 
 ```sh
-npx skills add dmmulroy/better-result@better-result-adopt -g -y
+npx skills add dmmulroy/better-result@adopt-better-result
 ```
 
-## Manual Installation
-
-Copy a skill directory into your agent's configured skills folder:
-
-- `skills/better-result-adopt/`
-- `skills/better-result-migrate-v2/`
-
-Each skill is self-contained and uses standard `SKILL.md` frontmatter plus optional `references/` files.
-
-## Optional Source Context
-
-For richer AI context in a consuming project, fetch the library source with:
+For a global non-interactive installation:
 
 ```sh
-npx opensrc better-result
+npx skills add dmmulroy/better-result@adopt-better-result -g -y
 ```
+
+For manual installation, copy `skills/adopt-better-result/` into the agent's configured skills directory. The skill is self-contained; its context pointers resolve files under `references/` only when their branch needs them.
