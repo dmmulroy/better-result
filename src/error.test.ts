@@ -223,6 +223,58 @@ describe("TaggedError", () => {
     });
   });
 
+  describe("match() method", () => {
+    const matchAppError = (error: AppError) =>
+      error.match({
+        NotFoundError: (selectedError) => `missing: ${selectedError.id}`,
+        ValidationError: (selectedError) => `invalid: ${selectedError.field}`,
+        NetworkError: (selectedError) => `network: ${selectedError.url}`,
+      });
+
+    it("dispatches every tagged error variant to its handler", () => {
+      const notFound = new NotFoundError({ id: "123", message: "not found" });
+      const validation = new ValidationError({ field: "email", message: "invalid" });
+      const network = new NetworkError({
+        url: "https://api.example.com",
+        message: "failed",
+      });
+
+      expect(matchAppError(notFound)).toBe("missing: 123");
+      expect(matchAppError(validation)).toBe("invalid: email");
+      expect(matchAppError(network)).toBe("network: https://api.example.com");
+    });
+
+    it("passes the selected error instance to its handler", () => {
+      const error: AppError = new NotFoundError({ id: "456", message: "not found" });
+
+      const selected = error.match({
+        NotFoundError: (selectedError) => selectedError,
+      });
+
+      expect(selected).toBe(error);
+    });
+
+    it("propagates an exception from the selected handler", () => {
+      const error = new NetworkError({
+        url: "https://api.example.com",
+        message: "failed",
+      });
+
+      let thrown: unknown;
+      try {
+        error.match({
+          NetworkError: (selectedError) => {
+            throw selectedError;
+          },
+        });
+      } catch (cause) {
+        thrown = cause;
+      }
+
+      expect(thrown).toBe(error);
+    });
+  });
+
   describe("matchError", () => {
     const matchAppError = (error: AppError) =>
       matchError(error, {

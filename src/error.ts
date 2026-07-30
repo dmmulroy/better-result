@@ -79,6 +79,17 @@ export const TaggedError = <Tag extends string>(tag: Tag): TaggedErrorClass<Tag>
       };
     }
 
+    /** Exhaustively matches a tagged error union and returns the selected handler's result. */
+    match<E extends TaggedErrorLike, const H extends MatchHandlers<E>>(
+      this: E,
+      handlers: H,
+    ): MatchReturn<H>;
+    /** Exhaustively matches a tagged error union while constraining every handler to return `R`. */
+    match<E extends TaggedErrorLike, R>(this: E, handlers: MatchHandlersWithReturn<E, R>): R;
+    match<E extends TaggedErrorLike>(this: E, handlers: MatchHandlers<E>): unknown {
+      return matchError(this, handlers);
+    }
+
     /**
      * Makes this TaggedError yieldable in Result.gen blocks.
      * Yielding short-circuits with this error, matching Err semantics.
@@ -99,13 +110,21 @@ export const TaggedError = <Tag extends string>(tag: Tag): TaggedErrorClass<Tag>
 };
 TaggedError.is = isAnyTaggedError;
 
-interface IterableError extends Error {
+interface TaggedErrorMethods extends Error {
+  /** Exhaustively matches a tagged error union and returns the selected handler's result. */
+  match<E extends TaggedErrorLike, const H extends MatchHandlers<E>>(
+    this: E,
+    handlers: H,
+  ): MatchReturn<H>;
+  /** Exhaustively matches a tagged error union while constraining every handler to return `R`. */
+  match<E extends TaggedErrorLike, R>(this: E, handlers: MatchHandlersWithReturn<E, R>): R;
+
   /** Makes TaggedError instances yieldable in Result.gen blocks. */
   [Symbol.iterator](): Generator<Err<never, this>, never, unknown>;
 }
 
 /** Instance type produced by TaggedError factory */
-export type TaggedErrorInstance<Tag extends string, Props> = IterableError & {
+export type TaggedErrorInstance<Tag extends string, Props> = TaggedErrorMethods & {
   readonly _tag: Tag;
   toJSON(): object;
 } & Readonly<Props>;

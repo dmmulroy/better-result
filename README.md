@@ -513,11 +513,19 @@ type AppError = NotFoundError | ValidationError;
 // Create errors with object args
 const err = new NotFoundError({ id: "123", message: "User not found" });
 
-// Exhaustive matching
-matchError(error, {
-  NotFoundError: (e) => `Missing: ${e.id}`,
-  ValidationError: (e) => `Bad field: ${e.field}`,
-});
+// Exhaustive matching with a standalone function
+const describeError = (error: AppError) =>
+  matchError(error, {
+    NotFoundError: (e) => `Missing: ${e.id}`,
+    ValidationError: (e) => `Bad field: ${e.field}`,
+  });
+
+// TaggedError instances can match directly
+const describeErrorDirectly = (error: AppError) =>
+  error.match({
+    NotFoundError: (e) => `Missing: ${e.id}`,
+    ValidationError: (e) => `Bad field: ${e.field}`,
+  });
 
 // Partial matching leaves unhandled errors unchanged by default
 const transformed = matchErrorPartial(error, {
@@ -791,7 +799,8 @@ Migration differences:
 | -------------------------------------------------- | ------------------------------------------------------- |
 | `TaggedError(tag)<Props>()`                        | Factory for tagged error class                          |
 | `TaggedError.is(value)`                            | Type guard for any TaggedError                          |
-| `matchError(err, handlers)`                        | Exhaustive pattern match by `_tag`                      |
+| `error.match(handlers)`                            | Exhaustive instance pattern match by `_tag`             |
+| `matchError(err, handlers)`                        | Exhaustive standalone pattern match by `_tag`           |
 | `matchErrorPartial(error, handlers, onUnhandled?)` | Partial match; unhandled errors pass through by default |
 | `isTaggedError(value)`                             | Type guard (standalone function)                        |
 | `panic(message, cause?)`                           | Throw unrecoverable Panic                               |

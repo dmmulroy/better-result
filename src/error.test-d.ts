@@ -15,6 +15,129 @@ type HttpErrorResponse = {
   readonly message: string;
 };
 
+describe("TaggedError.match", () => {
+  it("infers the error union and divergent handler returns from the receiver", () => {
+    const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
+    const outcome = result.error.match({
+      ErrorA: (_error) => 1,
+      ErrorB: (_error) => "B",
+    });
+
+    expectTypeOf(outcome).toEqualTypeOf<number | string>();
+  });
+
+  it("composes directly inside a Result error handler", () => {
+    const result = Result.err<{ readonly id: string }, ErrorA | ErrorB>(new ErrorA());
+    const outcome = result.match({
+      ok: () => 200 as const,
+      err: (error) =>
+        error.match({
+          ErrorA: () => 400 as const,
+          ErrorB: () => 503 as const,
+        }),
+    });
+
+    expectTypeOf(outcome).toEqualTypeOf<200 | 400 | 503>();
+  });
+
+  it("narrows every handler parameter to its tagged error variant", () => {
+    const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
+
+    result.error.match({
+      ErrorA: (error) => expectTypeOf(error).toEqualTypeOf<ErrorA>(),
+      ErrorB: (error) => expectTypeOf(error).toEqualTypeOf<ErrorB>(),
+    });
+  });
+
+  it("requires every error union variant to have a handler", () => {
+    const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
+
+    // @ts-expect-error - ErrorB handler is missing
+    result.error.match({
+      ErrorA: (_error) => 1,
+    });
+  });
+
+  it("rejects properties from another error variant in a narrowed handler", () => {
+    const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
+
+    result.error.match({
+      ErrorA: (error) => {
+        // @ts-expect-error - ErrorA does not have DetailedError properties
+        return error.detail;
+      },
+      ErrorB: (_error) => "B",
+    });
+  });
+
+  it("requires only the concrete receiver's handler", () => {
+    const error = new DetailedError({ detail: "context" });
+    const outcome = error.match({
+      DetailedError: (selectedError) => selectedError.detail,
+    });
+
+    expectTypeOf(outcome).toBeString();
+  });
+
+  it("drops never contributed by a throwing handler", () => {
+    const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
+    const outcome = result.error.match({
+      ErrorA: (_error) => 1,
+      ErrorB: (error) => {
+        throw error;
+      },
+    });
+
+    expectTypeOf(outcome).toBeNumber();
+  });
+
+  it("infers never when every handler throws", () => {
+    const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
+    const outcome = result.error.match({
+      ErrorA: (error) => {
+        throw error;
+      },
+      ErrorB: (error) => {
+        throw error;
+      },
+    });
+
+    expectTypeOf(outcome).toBeNever();
+  });
+
+  it("supports an explicit error union and shared return type", () => {
+    const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
+    const outcome = result.error.match<ErrorA | ErrorB, string>({
+      ErrorA: () => "A" as const,
+      ErrorB: () => "B" as const,
+    });
+
+    expectTypeOf(outcome).toBeString();
+  });
+
+  it("uses an explicit return type to constrain every handler", () => {
+    const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
+
+    result.error.match<ErrorA | ErrorB, string>({
+      ErrorA: () => "A",
+      // @ts-expect-error - number is not assignable to the explicit string return type
+      ErrorB: () => 123,
+    });
+  });
+
+  it("supports a concrete function return type when another handler throws", () => {
+    const toHttpErrorResponse = (error: ErrorA | ErrorB): HttpErrorResponse =>
+      error.match({
+        ErrorA: () => ({ status: 400, message: "Invalid request" }),
+        ErrorB: (selectedError) => {
+          throw selectedError;
+        },
+      });
+
+    expectTypeOf(toHttpErrorResponse).returns.toEqualTypeOf<HttpErrorResponse>();
+  });
+});
+
 describe("matchError", () => {
   it("infers union from divergent handler returns", () => {
     const result = Result.err<void, ErrorA | ErrorB>(new ErrorA());
