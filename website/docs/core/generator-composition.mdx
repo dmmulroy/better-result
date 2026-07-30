@@ -1,0 +1,79 @@
+---
+title: Generator composition
+description: Compose Results linearly with yield*, automatic short-circuiting, and inferred error unions.
+---
+
+`Result.gen` turns generator syntax into railway-style composition. `yield*` unwraps `Ok` values and stops at the first `Err`.
+
+## Synchronous workflows
+
+```ts
+const checkout = Result.gen(function* () {
+  const cart = yield* loadCart(cartId);
+  const stock = yield* reserveStock(cart.items);
+  const order = yield* createOrder(cart, stock);
+  return Result.ok(order);
+});
+// Result<Order, CartNotFound | OutOfStock | CreateOrderFailed>
+```
+
+Always return `Result.ok(...)` or `Result.err(...)` from the generator. Returning a bare value is a defect and throws `Panic`.
+
+## Yield tagged errors directly
+
+Every `TaggedError` is iterable, so guard clauses stay small:
+
+```ts
+const authorize = (user: User) =>
+  Result.gen(function* () {
+    if (!user.active) {
+      yield* new InactiveUser({ userId: user.id, message: "User is inactive" });
+    }
+
+    return Result.ok(user);
+  });
+```
+
+This is equivalent to `yield* Result.err(new InactiveUser(...))`.
+
+## Asynchronous workflows
+
+Use an async generator and `Result.await` for `Promise<Result<T, E>>`:
+
+```ts
+const dashboard = await Result.gen(async function* () {
+  const session = yield* Result.await(readSession());
+  const user = yield* Result.await(fetchUser(session.userId));
+  const posts = yield* Result.await(fetchPosts(user.id));
+
+  return Result.ok({ user, posts });
+});
+```
+
+Do not write `yield* await fetchUser()`. `Result.await` supplies the async iterable protocol needed by the generator and preserves the error type.
+
+## Cleanup behavior
+
+When an `Err` short-circuits, `Result.gen` closes the generator so `finally`, `Symbol.dispose`, and `Symbol.asyncDispose` cleanup can run. If generator body or cleanup code throws, `Result.gen` throws `Panic`.
+
+```ts
+const result = Result.gen(function* () {
+  using resource = openResource();
+  return Result.ok(yield* readResource(resource));
+});
+```
+
+## Normalize an error union
+
+Translate the completed workflow when callers should see one abstraction-level error:
+
+```ts
+const result = checkout.mapError(
+  (cause) => new CheckoutFailed({ stage: cause._tag, cause, message: "Checkout failed" }),
+);
+```
+
+<Callout type="tip" title="Keep generators declarative">
+  Put effects and validation in named Result-returning functions. The generator should read as a
+  workflow, not contain every implementation detail.
+</Callout>

@@ -1,0 +1,81 @@
+---
+title: Creating Results
+description: Create Ok and Err values and safely capture synchronous or asynchronous exceptions.
+---
+
+## `Result.ok`
+
+```ts
+const count = Result.ok(3); // Ok<number, never>
+const done = Result.ok(); // Ok<void, never>
+```
+
+An `Ok` stores its payload in `.value` and has `status: "ok"`.
+
+## `Result.err`
+
+```ts
+const missing = Result.err(new UserNotFound({ id }));
+// Err<never, UserNotFound>
+```
+
+An `Err` stores its payload in `.error` and has `status: "error"`. Prefer meaningful error objects over strings at module boundaries.
+
+## `Result.try`
+
+Capture a synchronous throwing API:
+
+```ts
+const parsed = Result.try(() => JSON.parse(input));
+// Result<unknown, UnhandledException>
+```
+
+Without a custom `catch`, the original thrown value is available as `UnhandledException.cause`.
+
+Map the exception into your domain:
+
+```ts
+class InvalidJson extends TaggedError("InvalidJson")<{
+  cause: unknown;
+  message: string;
+}> {}
+
+const parsed = Result.try({
+  try: () => JSON.parse(input),
+  catch: (cause) => new InvalidJson({ cause, message: "Input is not valid JSON" }),
+});
+// Result<unknown, InvalidJson>
+```
+
+The callback receives `{ attempt }`. Synchronous retry runs immediately and is bounded by `times`:
+
+```ts
+const value = Result.try(({ attempt }) => readFlakyValue(attempt), {
+  retry: { times: 2 }, // one initial attempt, at most two retries
+});
+```
+
+## `Result.tryPromise`
+
+Capture a Promise-returning operation:
+
+```ts
+const response = await Result.tryPromise(() => fetch(url));
+// Result<Response, UnhandledException>
+```
+
+Use an object to create a typed error:
+
+```ts
+const response = await Result.tryPromise({
+  try: ({ signal }) => fetch(url, { signal }),
+  catch: (cause) => new NetworkError({ cause, url, message: "Request failed" }),
+});
+```
+
+Retries, delays, backoff, jitter, and cancellation are covered in [Async operations and retries](/core/async-and-retries).
+
+<Callout type="warning" title="Catch handlers must not fail">
+  If a custom `catch` callback throws or rejects, better-result throws a `Panic`. A catch handler is
+  the boundary that promised to convert an unknown exception into a known error.
+</Callout>

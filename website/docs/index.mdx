@@ -1,0 +1,99 @@
+---
+title: A better Result type for TypeScript
+description: better-result is a small, dependency-free Result type for TypeScript with typed errors, safe callbacks, and generator-based composition.
+sidebar:
+  label: Overview
+  icon: home
+  order: 0
+---
+
+<Badge variant="accent">TypeScript-first</Badge> <Badge>zero runtime dependencies</Badge>
+
+`better-result` makes expected failure explicit without turning your application into nested conditionals. A value is either `Ok<T>` or `Err<E>`, and TypeScript carries both possibilities to the place where you decide what to do.
+
+```ts
+import { Result, TaggedError } from "better-result";
+
+class InvalidPort extends TaggedError("InvalidPort")<{
+  input: string;
+  message: string;
+}> {}
+
+const parsePort = (input: string) => {
+  const port = Number(input);
+  return Number.isInteger(port) && port > 0
+    ? Result.ok(port)
+    : Result.err(new InvalidPort({ input, message: "Port must be a positive integer" }));
+};
+
+const address = parsePort("3000").map((port) => `http://localhost:${port}`);
+// Result<string, InvalidPort>
+```
+
+<CardGroup cols={3}>
+  <Card title="Typed by construction" href="/getting-started/mental-model" icon="shield-check">
+    Success and error types stay visible through every transformation.
+  </Card>
+  <Card title="Compose linearly" href="/core/generator-composition" icon="git-branch">
+    Use `yield*` to write multi-step workflows without callback pyramids.
+  </Card>
+  <Card title="Treat defects differently" href="/errors/panic-and-defects" icon="bug">
+    Expected failures are `Err`; thrown callback defects become `Panic`.
+  </Card>
+</CardGroup>
+
+## Start in sixty seconds
+
+<Steps>
+  <Step title="Install">
+
+```sh
+npm install better-result
+```
+
+  </Step>
+  <Step title="Create a Result">
+
+```ts
+const parsed = Result.try(() => JSON.parse(input));
+// Result<unknown, UnhandledException>
+```
+
+  </Step>
+  <Step title="Handle both branches">
+
+```ts
+const message = parsed.match({
+  ok: (value) => `Parsed ${JSON.stringify(value)}`,
+  err: (error) => `Could not parse: ${error.message}`,
+});
+```
+
+  </Step>
+</Steps>
+
+## Choose your path
+
+<CardGroup cols={2}>
+  <Card title="I'm evaluating Result types" href="/getting-started/mental-model" icon="scale">
+    Learn the model, boundaries, and difference between recoverable errors and defects.
+  </Card>
+  <Card title="I want to ship code" href="/getting-started/quickstart" icon="terminal">
+    Build a small typed workflow and see the inferred error union.
+  </Card>
+  <Card title="I need exact API details" href="/reference/result" icon="braces">
+    Browse every `Result` constructor and combinator.
+  </Card>
+  <Card title="I'm upgrading" href="/migration/from-2" icon="route">
+    Migrate tagged errors, serialization, recovery, matching, and retries.
+  </Card>
+</CardGroup>
+
+## One contract for people and tools
+
+Every page is also emitted as clean Markdown. The site publishes [`/llms.txt`](/llms.txt), [`/llms-full.txt`](/llms-full.txt), page-level `.md` mirrors, searchable headings, and literal API names. Humans get navigation and examples; coding agents get the same technical contract without scraping presentation markup.
+
+<Callout type="tip" title="The shortest useful rule">
+  Return `Err` for a failure the caller can reasonably handle. Let `Panic` expose bugs and broken
+  invariants.
+</Callout>

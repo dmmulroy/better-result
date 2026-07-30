@@ -1,0 +1,92 @@
+---
+title: Migrate from 2.x
+description: Upgrade tagged error syntax, serialization, recovery inference, matching, collections, and retry configuration.
+---
+
+Upgrade the dependency, then let the compiler inventory changed call sites:
+
+```sh
+bun add better-result@latest
+bun run check
+```
+
+## TaggedError no longer has a trailing factory call
+
+```ts
+// Before
+class NotFound extends TaggedError("NotFound")<{ id: string; message: string }>() {}
+
+// Now
+class NotFound extends TaggedError("NotFound")<{ id: string; message: string }> {}
+```
+
+`TaggedErrorClass<Tag, Props>` becomes `TaggedErrorClass<Tag>`; payload typing is applied by the subclass.
+
+## Replace unvalidated serialization helpers
+
+`Result.serialize`, `Result.deserialize`, and `Result.hydrate` were removed. Define boundary-owned schemas:
+
+```ts
+const codec = Result.codec({
+  serialize: { ok: DomainToWireSchema, err: ErrorToWireSchema },
+  deserialize: { ok: WireToDomainSchema, err: WireToErrorSchema },
+});
+
+const encoded = await codec.serialize(result);
+const decoded = await codec.deserialize(input);
+```
+
+Handle `ResultSerializationError` and `ResultDeserializationError`. Schema async behavior controls operation async behavior.
+
+## Recovery can widen success
+
+```ts
+const result: ResultType<User, NotFound> = findUser(id);
+const recovered = result.tryRecover(() => Result.ok(guestId));
+// Result<User | GuestId, never>
+```
+
+Do not cast away the widened union. Narrow it or return a common domain type.
+
+## Matching infers handler return unions
+
+`matchError` and `matchErrorPartial` retain different handler return types. `matchErrorPartial` may omit its fallback; unhandled variants then pass through unchanged.
+
+```ts
+const output = matchErrorPartial(error, {
+  NotFound: () => 404,
+});
+// 404 | unhandled error variants
+```
+
+## Collection additions
+
+- `Result.all` preserves tuple success types and returns the first error.
+- `Result.allAsync` awaits concurrently and preserves input-order error selection.
+- `Result.partition` supports heterogeneous Results.
+- `Result.partitionAsync` awaits concurrently and partitions both branches.
+
+## Retry additions
+
+Existing bounded static retry policies remain valid. Async retries also support:
+
+- `TryPromiseContext.signal`;
+- top-level `signal` cancellation;
+- dynamic `delayMs(error, context)`;
+- static `jitter`;
+- `shouldRetry(error, context)`.
+
+Dynamic delays cannot use `backoff` or `jitter`.
+
+## Repository skill
+
+For a systematic migration, use the repository's portable `migrate-better-result-3` skill. It inventories affected APIs, includes a safe TaggedError codemod, and treats the compiler as the migration ledger.
+
+```sh
+npx skills add dmmulroy/better-result@migrate-better-result-3
+```
+
+<Callout type="tip" title="Keep behavior stable first">
+  Apply mechanical syntax and codec changes, type-check, then adopt optional collection or retry
+  features separately. This keeps migration failures attributable.
+</Callout>

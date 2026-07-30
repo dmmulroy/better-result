@@ -1,0 +1,90 @@
+---
+title: Result API
+description: Reference for every constructor, guard, combinator, generator helper, collection helper, and codec on Result.
+---
+
+Import the runtime object and union type from the same entry point:
+
+```ts
+import { Result, type Result as ResultType } from "better-result";
+```
+
+## Constructors and guards
+
+| API                                          | Return                                   | Behavior                                             |
+| -------------------------------------------- | ---------------------------------------- | ---------------------------------------------------- |
+| `Result.ok(value?)`                          | `Ok<T, never>`                           | Create success; omitted value is `void`              |
+| `Result.err(error)`                          | `Err<never, E>`                          | Create failure                                       |
+| `Result.isOk(result)`                        | type predicate                           | Narrow to `Ok`                                       |
+| `Result.isError(result)`                     | type predicate                           | Narrow to `Err`                                      |
+| `Result.try(fn, config?)`                    | `Result<T, UnhandledException>`          | Capture a sync exception; optional immediate retries |
+| `Result.try({ try, catch }, config?)`        | `Result<T, E>`                           | Capture and translate a sync exception               |
+| `Result.tryPromise(fn, config?)`             | `Promise<Result<T, UnhandledException>>` | Capture Promise rejection; supports retries          |
+| `Result.tryPromise({ try, catch }, config?)` | `Promise<Result<T, E>>`                  | Capture and translate Promise rejection              |
+
+## Transformation and composition
+
+| API                                  | Runs on              | Result                        |
+| ------------------------------------ | -------------------- | ----------------------------- |
+| `Result.map(result, fn)`             | Ok                   | `Result<B, E>`                |
+| `Result.mapError(result, fn)`        | Err                  | `Result<A, E2>`               |
+| `Result.andThen(result, fn)`         | Ok                   | `Result<B, E \| E2>`          |
+| `Result.andThenAsync(result, fn)`    | Ok                   | `Promise<Result<B, E \| E2>>` |
+| `Result.tryRecover(result, fn)`      | Err                  | `Result<A \| B, E2>`          |
+| `Result.tryRecoverAsync(result, fn)` | Err                  | `Promise<Result<A \| B, E2>>` |
+| `Result.flatten(result)`             | Ok containing Result | `Result<T, E \| E2>`          |
+
+These binary combinators also support data-last calls such as `Result.map(fn)(result)`.
+
+## Handling and extraction
+
+| API                                 | Behavior                                 |
+| ----------------------------------- | ---------------------------------------- |
+| `Result.match(result, { ok, err })` | Fold both branches into one output type  |
+| `Result.unwrap(result, message?)`   | Return Ok value or throw `Panic` for Err |
+| `Result.unwrapOr(result, fallback)` | Return Ok value or fallback              |
+
+`match` and `unwrapOr` support data-last calls. `unwrap` is data-first.
+
+## Observation
+
+| API                    | Selected callback      | Return                     |
+| ---------------------- | ---------------------- | -------------------------- |
+| `Result.tap`           | Ok, sync               | original Result            |
+| `Result.tapAsync`      | Ok, async              | Promise of original Result |
+| `Result.tapError`      | Err, sync              | original Result            |
+| `Result.tapErrorAsync` | Err, async             | Promise of original Result |
+| `Result.tapBoth`       | branch-specific, sync  | original Result            |
+| `Result.tapBothAsync`  | branch-specific, async | Promise of original Result |
+
+All support data-first and data-last forms. Callback failure throws `Panic`.
+
+## Generators
+
+| API                                      | Purpose                                                      |
+| ---------------------------------------- | ------------------------------------------------------------ |
+| `Result.gen(function* () { ... })`       | Compose synchronous Results with `yield*`                    |
+| `Result.gen(async function* () { ... })` | Compose sync and async Results                               |
+| `Result.await(promise)`                  | Make `Promise<Result<T, E>>` yieldable in an async generator |
+
+## Collections
+
+| API                              | Behavior                                                         |
+| -------------------------------- | ---------------------------------------------------------------- |
+| `Result.all(results)`            | Collect Ok values or return first Err                            |
+| `Result.allAsync(results)`       | Await concurrently, then collect or return first input-order Err |
+| `Result.partition(results)`      | Return `[okValues, errorValues]`                                 |
+| `Result.partitionAsync(results)` | Await concurrently, then partition                               |
+
+Tuple inputs preserve success positions and union their errors. Async helpers turn rejected input Promises into `Panic`.
+
+## Serialization
+
+```ts
+const codec = Result.codec({
+  serialize: { ok: okToWireSchema, err: errorToWireSchema },
+  deserialize: { ok: wireToOkSchema, err: wireToErrorSchema },
+});
+```
+
+See [Result codecs](/serialization/result-codecs) for sync/async inference and error behavior.

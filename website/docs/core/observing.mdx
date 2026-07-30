@@ -1,0 +1,56 @@
+---
+title: Observing Results
+description: Add logging, tracing, and metrics without changing success or error values.
+---
+
+Observation methods return the original Result unchanged.
+
+## Observe success
+
+```ts
+const result = parsePayload(input).tap((payload) => {
+  metrics.increment("payload.parsed");
+  logger.debug("Parsed payload", { id: payload.id });
+});
+```
+
+Use `tapAsync` for an async side effect.
+
+## Observe errors
+
+```ts
+const result = parsePayload(input).tapError((error) => {
+  metrics.increment("payload.parse_failed", { tag: error._tag });
+});
+```
+
+Use `tapErrorAsync` for an async side effect.
+
+## Observe either branch
+
+```ts
+const result = loadUser(id).tapBoth({
+  ok: (user) => logger.info("Loaded user", { userId: user.id }),
+  err: (error) => logger.warn("Could not load user", { tag: error._tag }),
+});
+```
+
+`tapBothAsync` takes two Promise-returning handlers.
+
+## Static and data-last forms
+
+```ts
+Result.tapError(result, reportError);
+
+const withErrorReporting = Result.tapError((error: AppError) => reportError(error));
+const observed = withErrorReporting(result);
+```
+
+## Safety contract
+
+A throwing or rejected observer becomes `Panic`. Observation should not be able to quietly change the Result's error type. If telemetry failure is expected and recoverable, model that telemetry operation separately rather than hiding it in `tap`.
+
+<Callout type="tip" title="Keep payloads safe">
+  A typed error may still contain secrets or personal data. Select fields deliberately before
+  sending errors or Result values to logs and tracing systems.
+</Callout>

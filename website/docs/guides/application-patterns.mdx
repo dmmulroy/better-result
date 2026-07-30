@@ -1,0 +1,86 @@
+---
+title: Application patterns
+description: Place Result boundaries, translate errors, compose workflows, and keep framework concerns at the edge.
+---
+
+## Parse at the edge
+
+Turn untrusted input into domain values once:
+
+```ts
+const parseCreateUser = (input: unknown): ResultType<CreateUser, InvalidCreateUser> => {
+  const parsed = CreateUserSchema.safeParse(input);
+  return parsed.success
+    ? Result.ok(parsed.data)
+    : Result.err(new InvalidCreateUser({ issues: parsed.error.issues, message: "Invalid user" }));
+};
+```
+
+Inner code should receive meaningful values instead of repeatedly checking unknown shapes.
+
+## One error vocabulary per boundary
+
+A repository may expose `UserNotFound | UserStoreUnavailable`, while its database adapter knows driver-specific exceptions. Translate once:
+
+```ts
+const findUser = (id: UserId) =>
+  queryUserRow(id).mapError((cause) =>
+    cause._tag === "NoRows"
+      ? new UserNotFound({ id, message: "User not found" })
+      : new UserStoreUnavailable({ cause, message: "User store unavailable" }),
+  );
+```
+
+Do not leak framework, database, or HTTP error types through domain APIs.
+
+## Compose in an application workflow
+
+```ts
+const registerUser = (input: unknown) =>
+  Result.gen(function* () {
+    const command = yield* parseCreateUser(input);
+    yield* ensureEmailAvailable(command.email);
+    const user = yield* insertUser(command);
+    yield* publishUserRegistered(user);
+    return Result.ok(user);
+  });
+```
+
+The signature records every expected failure. Handle or normalize the union where the caller's policy lives.
+
+## Map to transport once
+
+```ts
+const toHttpResponse = (result: ResultType<User, RegisterUserError>) =>
+  result.match({
+    ok: (user) => Response.json(user, { status: 201 }),
+    err: (error) =>
+      matchError(error, {
+        InvalidCreateUser: (error) => Response.json(error.toJSON(), { status: 400 }),
+        EmailTaken: (error) => Response.json(error.toJSON(), { status: 409 }),
+        UserStoreUnavailable: () => Response.json({ message: "Try again" }, { status: 503 }),
+        PublishFailed: () => Response.json({ message: "Try again" }, { status: 503 }),
+      }),
+  });
+```
+
+## Avoid common traps
+
+<Accordion>
+  <AccordionItem title="String errors everywhere">
+    Strings are hard to narrow, enrich, serialize deliberately, and match exhaustively. Prefer
+    tagged classes at module boundaries.
+  </AccordionItem>
+  <AccordionItem title="Wrapping every function">
+    Pure, total helpers do not need Result. Introduce Result where failure is part of the caller's
+    decision.
+  </AccordionItem>
+  <AccordionItem title="Catching every Panic">
+    Panic is a defect signal. Catch it at reporting/supervision boundaries, not in ordinary domain
+    control flow.
+  </AccordionItem>
+  <AccordionItem title="Unwrapping in the middle">
+    `unwrap()` converts `Err` into a thrown defect. Compose or handle instead unless the Err truly
+    violates an invariant.
+  </AccordionItem>
+</Accordion>

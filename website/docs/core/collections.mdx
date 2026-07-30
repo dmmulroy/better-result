@@ -1,0 +1,64 @@
+---
+title: Collections
+description: Collect, await, partition, and flatten Result values while preserving tuple and union types.
+---
+
+## `Result.all`
+
+Collect all successes or return the first error in input order:
+
+```ts
+const result = Result.all([Result.ok(1), Result.ok("two"), Result.ok(true)] as const);
+// Result<[number, string, boolean], never>
+```
+
+```ts
+const result = Result.all([loadUser(), loadTeam(), loadPlan()]);
+// first Err short-circuits collection
+```
+
+The returned error is the first error encountered while iterating.
+
+## `Result.allAsync`
+
+Await all inputs concurrently, then collect in input order:
+
+```ts
+const result = await Result.allAsync([
+  fetchUser(id),
+  fetchTeam(teamId),
+  Result.ok(cachedPolicy),
+] as const);
+```
+
+A raw rejected input Promise is a broken contract and becomes `Panic`. Promise-returning operations should normally catch expected rejection with `Result.tryPromise` before collection.
+
+## `Result.partition`
+
+Keep every branch and preserve relative order:
+
+```ts
+const [users, errors] = Result.partition(results);
+// users: Array<success union>
+// errors: Array<error union>
+```
+
+Unlike `all`, partition never short-circuits.
+
+## `Result.partitionAsync`
+
+```ts
+const [users, errors] = await Result.partitionAsync(requests);
+```
+
+Inputs are awaited concurrently, then partitioned in input order. A rejected Promise becomes `Panic`.
+
+## `Result.flatten`
+
+```ts
+const nested: ResultType<ResultType<User, ParseError>, LoadError> = loadNested();
+const flat = Result.flatten(nested);
+// Result<User, ParseError | LoadError>
+```
+
+Prefer `andThen` when creating the chain. `flatten` is useful when a nested Result already exists.

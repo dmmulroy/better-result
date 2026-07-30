@@ -1,0 +1,92 @@
+---
+title: Async operations and retries
+description: Capture promises, retry bounded failures, add backoff and jitter, and propagate cancellation.
+---
+
+## Capture a Promise
+
+```ts
+const result = await Result.tryPromise({
+  try: ({ signal }) => fetch(url, { signal }),
+  catch: (cause) => new RequestFailed({ url, cause, message: "Request failed" }),
+});
+```
+
+The attempt context is `{ attempt, signal? }`. `attempt` starts at 1.
+
+## Static retry policy
+
+```ts
+const result = await Result.tryPromise(callApi, {
+  retry: {
+    times: 3,
+    delayMs: 100,
+    backoff: "exponential",
+  },
+});
+```
+
+`times` counts retries after the initial attempt. Static policies require `delayMs` and one of:
+
+| Backoff       | Delay before retry number `n` |
+| ------------- | ----------------------------- |
+| `constant`    | `delayMs`                     |
+| `linear`      | `delayMs × n`                 |
+| `exponential` | `delayMs × 2^(n - 1)`         |
+
+## Retry selected errors
+
+```ts
+retry: {
+  times: 3,
+  delayMs: 200,
+  backoff: "exponential",
+  shouldRetry: (error, { attempt }) =>
+    error._tag === "RateLimited" && attempt < 4,
+}
+```
+
+`shouldRetry` is synchronous. If it throws, `Result.tryPromise` throws `Panic`.
+
+## Error-dependent delays
+
+```ts
+retry: {
+  times: 3,
+  shouldRetry: (error) => error.retryable,
+  delayMs: (error, { attempt }) => error.retryAfterMs ?? attempt * 250,
+}
+```
+
+A dynamic `delayMs` is the final delay and cannot be combined with `backoff` or `jitter`. A throwing callback becomes `Panic`.
+
+## Jitter
+
+```ts
+retry: {
+  times: 3,
+  delayMs: 100,
+  backoff: "exponential",
+  jitter: 0.3,
+}
+```
+
+A numeric jitter from `0` through `1` shortens a static delay by up to that fraction. `true` means full jitter. Invalid, non-finite, or out-of-range numbers throw `Panic` before the first attempt.
+
+## Cancellation
+
+```ts
+const controller = new AbortController();
+
+const result = await Result.tryPromise(({ signal }) => fetch(url, { signal }), {
+  signal: controller.signal,
+  retry: { times: 3, delayMs: 100, backoff: "constant" },
+});
+```
+
+Aborting stops a pending retry delay and prevents later attempts. The active operation is cancelled only if your callback forwards `signal` to an abort-aware API. The latest typed `Err` is returned when retry scheduling stops.
+
+<Callout type="warning" title="Retries need an idempotency decision">
+  Do not retry a state-changing operation merely because the API allows it. Decide whether the
+  operation and its transport are safe to repeat.
+</Callout>

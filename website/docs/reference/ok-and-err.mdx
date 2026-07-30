@@ -1,0 +1,65 @@
+---
+title: Ok and Err API
+description: Reference for Result variants, discriminants, payloads, instance methods, and iterator behavior.
+---
+
+## `Ok<A, E = never>`
+
+A successful Result variant. `E` is phantom: it exists for type composition but is not stored at runtime.
+
+| Member                       | Type / behavior                                  |
+| ---------------------------- | ------------------------------------------------ |
+| `status`                     | literal `"ok"`                                   |
+| `value`                      | `A`                                              |
+| `isOk()`                     | returns true and narrows                         |
+| `isErr()`                    | returns false and narrows                        |
+| `map(fn)`                    | transforms `value`                               |
+| `mapError(fn)`               | no-op; updates phantom error type                |
+| `andThen(fn)`                | runs next Result-returning operation             |
+| `andThenAsync(fn)`           | runs async next operation                        |
+| `tryRecover(fn)`             | no-op; preserves existing success                |
+| `tryRecoverAsync(fn)`        | async no-op; preserves existing success          |
+| `match(handlers)`            | runs `ok` handler                                |
+| `unwrap()`                   | returns `value`                                  |
+| `unwrapOr(fallback)`         | returns `value`                                  |
+| `tap` / `tapAsync`           | observes success                                 |
+| `tapError` / `tapErrorAsync` | no-op                                            |
+| `tapBoth` / `tapBothAsync`   | runs `ok` observer                               |
+| `[Symbol.iterator]()`        | returns `value` to `Result.gen` without yielding |
+
+## `Err<T, E>`
+
+An error Result variant. `T` is phantom: it exists for type composition but is not stored at runtime.
+
+| Member                       | Type / behavior                             |
+| ---------------------------- | ------------------------------------------- |
+| `status`                     | literal `"error"`                           |
+| `error`                      | `E`                                         |
+| `isOk()`                     | returns false and narrows                   |
+| `isErr()`                    | returns true and narrows                    |
+| `map(fn)`                    | no-op; updates phantom success type         |
+| `mapError(fn)`               | transforms `error`                          |
+| `andThen(fn)`                | no-op; preserves existing error             |
+| `andThenAsync(fn)`           | async no-op; preserves existing error       |
+| `tryRecover(fn)`             | runs recovery                               |
+| `tryRecoverAsync(fn)`        | runs async recovery                         |
+| `match(handlers)`            | runs `err` handler                          |
+| `unwrap(message?)`           | throws `Panic` with `error` as cause        |
+| `unwrapOr(fallback)`         | returns fallback                            |
+| `tap` / `tapAsync`           | no-op                                       |
+| `tapError` / `tapErrorAsync` | observes error                              |
+| `tapBoth` / `tapBothAsync`   | runs `err` observer                         |
+| `[Symbol.iterator]()`        | yields itself to short-circuit `Result.gen` |
+
+## Construct through `Result`
+
+```ts
+const ok = Result.ok(value);
+const err = Result.err(error);
+```
+
+`Ok` and `Err` classes are exported for guards, type declarations, and advanced use, but the constructors on `Result` communicate intent more clearly.
+
+## Callback contract
+
+Instance callbacks are protected. A thrown or rejected callback becomes `Panic`; it is never silently added to the Result's typed error union.

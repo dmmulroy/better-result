@@ -1,0 +1,97 @@
+---
+title: Mental model
+description: Understand Result values, expected failures, defects, narrowing, and boundary design.
+---
+
+A `Result<T, E>` is a discriminated union:
+
+```ts
+class Ok<T, E = never> {
+  readonly status = "ok";
+  readonly value: T;
+}
+
+class Err<T, E> {
+  readonly status = "error";
+  readonly error: E;
+}
+
+type Result<T, E> = Ok<T, E> | Err<T, E>;
+```
+
+The actual classes carry methods and iterator behavior, but these three fields are the heart of the model.
+
+## Expected failures are values
+
+Use `Err<E>` when a caller can make a meaningful decision:
+
+- input is invalid;
+- a record is absent;
+- credentials are rejected;
+- an upstream service is unavailable;
+- serialization input does not satisfy a schema.
+
+The caller sees `E` in the return type and cannot accidentally use the success value first.
+
+## Defects are not domain errors
+
+A callback that unexpectedly throws inside `.map()`, `.andThen()`, `.match()`, recovery, observation, a generator, or codec validation becomes or throws a `Panic`. A defect should be reported and fixed, not silently widened into `E | unknown`.
+
+```ts
+const value = Result.ok(2).map(() => {
+  throw new Error("broken invariant");
+});
+// throws Panic
+```
+
+See [Panic and defects](/errors/panic-and-defects) for the exact boundary.
+
+## Branches narrow normally
+
+```ts
+const result: ResultType<User, FindUserError> = findUser(id);
+
+if (result.status === "ok") {
+  result.value; // User
+} else {
+  result.error; // FindUserError
+}
+```
+
+You can also use `Result.isOk`, `Result.isError`, `.isOk()`, `.isErr()`, or `.match()`.
+
+## Transform the branch you own
+
+| Operation          | Runs on         | Purpose                                      |
+| ------------------ | --------------- | -------------------------------------------- |
+| `map`              | `Ok`            | Change a success value                       |
+| `mapError`         | `Err`           | Change an error value                        |
+| `andThen`          | `Ok`            | Continue with another Result-returning step  |
+| `tryRecover`       | `Err`           | Recover or replace the error                 |
+| `tap` / `tapError` | selected branch | Observe without changing the Result          |
+| `match`            | both            | Leave the Result abstraction with one output |
+
+## Put Result at useful boundaries
+
+A useful Result boundary has a caller that can act on the error. Good examples are repositories, parsers, domain operations, adapters, and application workflows. Do not wrap every pure getter or turn programmer mistakes into recoverable variants.
+
+<Callout type="tip" title="Design from the caller">
+  Start by naming what the caller can do after each failure. That usually reveals the right tagged
+  error variants and the right boundary.
+</Callout>
+
+## Composition preserves evidence
+
+`andThen` and `Result.gen` union errors from every step. The final signature is a compact ledger of all expected failures:
+
+```ts
+const loadDashboard = (): ResultType<Dashboard, SessionExpired | UserNotFound | QueryFailed> =>
+  Result.gen(function* () {
+    const session = yield* readSession();
+    const user = yield* findUser(session.userId);
+    const dashboard = yield* queryDashboard(user.id);
+    return Result.ok(dashboard);
+  });
+```
+
+Handle or translate that union at the next meaningful boundary.

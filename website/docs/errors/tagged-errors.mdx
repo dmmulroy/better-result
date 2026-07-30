@@ -1,0 +1,104 @@
+---
+title: Tagged errors
+description: Define discriminated Error subclasses with typed properties, guards, JSON output, causes, and generator support.
+---
+
+`TaggedError` creates real `Error` subclasses with a literal `_tag` and typed properties.
+
+## Define an error
+
+```ts
+import { TaggedError } from "better-result";
+
+class UserNotFound extends TaggedError("UserNotFound")<{
+  userId: string;
+  message: string;
+}> {}
+
+const error = new UserNotFound({
+  userId: "usr_123",
+  message: "User usr_123 was not found",
+});
+```
+
+The class has normal `Error` behavior plus:
+
+- `name === "UserNotFound"`;
+- `_tag === "UserNotFound"` as a string literal;
+- readonly `userId` and other declared properties;
+- `toJSON()`;
+- `UserNotFound.is(value)`;
+- iterator support for `yield*`.
+
+## Add a computed message
+
+```ts
+class RequestFailed extends TaggedError("RequestFailed")<{
+  url: string;
+  status: number;
+  message: string;
+}> {
+  constructor(args: { url: string; status: number }) {
+    super({
+      ...args,
+      message: `Request to ${args.url} failed with ${args.status}`,
+    });
+  }
+}
+```
+
+## Preserve a cause
+
+Declare `cause` in the property type and pass it to `super`:
+
+```ts
+class ParseFailed extends TaggedError("ParseFailed")<{
+  input: string;
+  cause: unknown;
+  message: string;
+}> {}
+
+new ParseFailed({ input, cause, message: "Could not parse input" });
+```
+
+Native `Error.cause` is populated. `toJSON()` serializes an `Error` cause to its name, message, and stack.
+
+## Guards
+
+```ts
+if (UserNotFound.is(value)) {
+  value.userId;
+}
+
+if (TaggedError.is(value)) {
+  value._tag;
+  value.toJSON();
+}
+
+if (isTaggedError(value)) {
+  value._tag;
+}
+```
+
+`TaggedError.is` and `isTaggedError` detect any better-result tagged error. A concrete class's `.is` guard detects that class.
+
+## Yield directly
+
+```ts
+const result = Result.gen(function* () {
+  if (!user) {
+    yield* new UserNotFound({ userId, message: "User not found" });
+  }
+  return Result.ok(user);
+});
+```
+
+## Public helper types
+
+- `TaggedErrorClass<Tag>` describes the factory's generic class.
+- `TaggedErrorInstance<Tag, Props>` describes an instance structurally.
+- `AnyTaggedError` describes any tagged error with `toJSON()`.
+
+<Callout type="note" title="Current class syntax">
+  The class extends `TaggedError("Tag")<Props>` directly. There is no trailing `()` after the property type.
+</Callout>

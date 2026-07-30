@@ -1,0 +1,85 @@
+---
+title: Testing Result code
+description: Test success, every expected error variant, short-circuiting, retries, and Panic behavior through public interfaces.
+---
+
+## Assert the discriminated shape
+
+```ts
+const result = parsePort("3000");
+
+expect(result.status).toBe("ok");
+if (result.status === "ok") {
+  expect(result.value).toBe(3000);
+}
+```
+
+Narrow before accessing payloads so tests follow the same contract as production callers.
+
+## Test each error variant
+
+```ts
+const result = parsePort("nope");
+
+expect(result.status).toBe("error");
+if (result.status === "error") {
+  expect(InvalidPort.is(result.error)).toBe(true);
+  expect(result.error.input).toBe("nope");
+}
+```
+
+For a workflow, cover every tagged variant the public signature promises—not only a generic failure assertion.
+
+## Test short-circuit behavior
+
+```ts
+const save = vi.fn(() => Result.ok(undefined));
+const result = Result.gen(function* () {
+  yield* Result.err(new InvalidInput({ message: "invalid" }));
+  yield* save();
+  return Result.ok(undefined);
+});
+
+expect(Result.isError(result)).toBe(true);
+expect(save).not.toHaveBeenCalled();
+```
+
+## Test retry policy deterministically
+
+Inject or faithfully control the operation's sequence. Assert attempt numbers and final Result. Keep delays tiny or use your test runner's fake timers.
+
+```ts
+const attempts: number[] = [];
+const result = await Result.tryPromise(
+  async ({ attempt }) => {
+    attempts.push(attempt);
+    if (attempt < 3) throw new Error("temporary");
+    return "ready";
+  },
+  { retry: { times: 2, delayMs: 0, backoff: "constant" } },
+);
+
+expect(attempts).toEqual([1, 2, 3]);
+expect(Result.isOk(result)).toBe(true);
+```
+
+## Assert defects separately
+
+```ts
+expect(() =>
+  Result.ok(1).map(() => {
+    throw new Error("bug");
+  }),
+).toThrow(Panic);
+```
+
+Do not make expected-error tests catch Panic; that blurs the contract you are trying to prove.
+
+## Add compile-time tests
+
+Inference is part of the API. Use your repository's type-test convention to verify important unions:
+
+```ts
+const result = Result.all([Result.ok(1), Result.err("failed" as const)] as const);
+type Error = InferErr<typeof result>; // "failed"
+```

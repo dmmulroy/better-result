@@ -1,0 +1,74 @@
+---
+title: Exported types
+description: Reference for Result, inference helpers, tagged error helpers, codec types, serialized envelopes, retry context, and Standard Schema types.
+---
+
+All public types are imported from `better-result`.
+
+## Result and inference
+
+| Type               | Meaning                                           |
+| ------------------ | ------------------------------------------------- |
+| `Result<T, E>`     | `Ok<T, E> \| Err<T, E>`                           |
+| `Ok<T, E = never>` | success variant class                             |
+| `Err<T, E>`        | error variant class                               |
+| `InferOk<R>`       | extract the success type from a Result or variant |
+| `InferErr<R>`      | extract the error type from a Result or variant   |
+
+```ts
+const result = Result.gen(function* () {
+  const user = yield* findUser(id);
+  return Result.ok(user.name);
+});
+
+type Value = InferOk<typeof result>; // string
+type Error = InferErr<typeof result>; // FindUserError
+```
+
+## Tagged errors
+
+| Type                              | Meaning                                              |
+| --------------------------------- | ---------------------------------------------------- |
+| `AnyTaggedError`                  | any tagged Error with `_tag` and `toJSON()`          |
+| `TaggedErrorClass<Tag>`           | generic class returned by the factory                |
+| `TaggedErrorInstance<Tag, Props>` | structural tagged error instance with readonly Props |
+
+## Retry context
+
+| Type                | Fields                                            |
+| ------------------- | ------------------------------------------------- |
+| `TryContext`        | `attempt: number` (one-based)                     |
+| `TryPromiseContext` | `attempt: number`, optional `signal: AbortSignal` |
+
+Retry config itself is inferred from `Result.tryPromise`; it is not exported as a named type.
+
+## Serialized envelopes
+
+| Type                     | Shape                                 |
+| ------------------------ | ------------------------------------- |
+| `SerializedOk<T>`        | `{ status: "ok"; value: T }`          |
+| `SerializedErr<E>`       | `{ status: "error"; error: E }`       |
+| `SerializedResult<T, E>` | `SerializedOk<T> \| SerializedErr<E>` |
+
+These describe wire envelopes, not proof of validation. Use `Result.codec` at untrusted boundaries.
+
+## Codec types
+
+| Type                     | Meaning                                            |
+| ------------------------ | -------------------------------------------------- |
+| `ResultCodecConfig<...>` | four schemas for serialize/deserialize × ok/err    |
+| `ResultCodec<...>`       | resulting `serialize` and `deserialize` operations |
+| `ResultCodecIssue`       | Standard Schema validation issue alias             |
+
+## Standard Schema types
+
+| Type                              | Meaning                             |
+| --------------------------------- | ----------------------------------- |
+| `StandardSchemaV1<Input, Output>` | supported Standard Schema interface |
+| `StandardSchemaInput<S>`          | infer schema input                  |
+| `StandardSchemaOutput<S>`         | infer schema output                 |
+| `StandardSchemaIssue`             | one validation issue                |
+| `StandardSchemaPathSegment`       | validation path property wrapper    |
+| `StandardSchemaResult<Output>`    | schema success-or-issues result     |
+
+Prefer your schema library's public types in application code. These exports are useful for generic codec tooling and libraries that integrate directly with better-result.

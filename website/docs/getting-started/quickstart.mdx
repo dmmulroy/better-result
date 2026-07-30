@@ -1,0 +1,92 @@
+---
+title: Quickstart
+description: Build a small typed workflow with TaggedError, Result.try, generator composition, and exhaustive handling.
+---
+
+This example parses an environment value, validates it, and builds a server address without throwing expected failures.
+
+## 1. Define errors callers can distinguish
+
+```ts
+import { Result, TaggedError, matchError, type Result as ResultType } from "better-result";
+
+class MissingEnv extends TaggedError("MissingEnv")<{
+  name: string;
+  message: string;
+}> {}
+
+class InvalidPort extends TaggedError("InvalidPort")<{
+  input: string;
+  message: string;
+}> {}
+```
+
+The `_tag` field is a string literal, so unions narrow without `instanceof` coupling.
+
+## 2. Return Results from fallible operations
+
+```ts
+const readEnv = (name: string): ResultType<string, MissingEnv> => {
+  const value = process.env[name];
+  return value === undefined
+    ? Result.err(new MissingEnv({ name, message: `${name} is required` }))
+    : Result.ok(value);
+};
+
+const parsePort = (input: string): ResultType<number, InvalidPort> => {
+  const port = Number(input);
+  return Number.isInteger(port) && port > 0 && port <= 65_535
+    ? Result.ok(port)
+    : Result.err(new InvalidPort({ input, message: "Expected a port from 1 to 65535" }));
+};
+```
+
+## 3. Compose with `yield*`
+
+```ts
+const readServerAddress = () =>
+  Result.gen(function* () {
+    const host = yield* readEnv("HOST");
+    const portText = yield* readEnv("PORT");
+    const port = yield* parsePort(portText);
+
+    return Result.ok(`http://${host}:${port}`);
+  });
+
+// Result<string, MissingEnv | InvalidPort>
+```
+
+The first `Err` short-circuits. Every `Ok` is unwrapped. The error type is inferred from what the generator yielded.
+
+## 4. Handle the complete result
+
+```ts
+const exitCode = readServerAddress().match({
+  ok: (address) => {
+    console.log(`Listening at ${address}`);
+    return 0;
+  },
+  err: (error) => {
+    console.error(
+      matchError(error, {
+        MissingEnv: (missing) => `Configuration missing: ${missing.name}`,
+        InvalidPort: (invalid) => `Invalid PORT ${JSON.stringify(invalid.input)}`,
+      }),
+    );
+    return 1;
+  },
+});
+```
+
+Adding a new tagged error to this workflow makes the exhaustive `matchError` handlers fail to type-check until you decide how to present it.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Generator composition" href="/core/generator-composition" icon="git-branch">
+    Learn sync, async, direct tagged-error yields, and cleanup behavior.
+  </Card>
+  <Card title="Typed errors" href="/errors/tagged-errors" icon="triangle-alert">
+    Add constructors, metadata, JSON output, and guards.
+  </Card>
+</CardGroup>

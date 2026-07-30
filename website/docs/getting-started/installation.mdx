@@ -1,0 +1,74 @@
+---
+title: Installation
+description: Install better-result and import its ESM-only TypeScript API.
+---
+
+## Requirements
+
+- TypeScript 5 or newer is recommended.
+- The package is ESM-only.
+- It has no runtime dependencies and does not require a specific server or browser runtime.
+
+<CodeGroup>
+
+```sh npm
+npm install better-result
+```
+
+```sh pnpm
+pnpm add better-result
+```
+
+```sh Bun
+bun add better-result
+```
+
+```sh Yarn
+yarn add better-result
+```
+
+</CodeGroup>
+
+## Import values and types
+
+```ts
+import {
+  Result,
+  TaggedError,
+  matchError,
+  type Result as ResultType,
+  type InferOk,
+  type InferErr,
+} from "better-result";
+```
+
+`Result` is both the namespace-like object that contains constructors/combinators and the name of the union type. Alias the type to `ResultType` when a file uses both heavily.
+
+```ts
+const findUser = (id: string): ResultType<User, UserNotFound> => {
+  // ...
+};
+```
+
+## Runtime support
+
+`better-result` uses standard JavaScript classes, generators, async generators, `AbortSignal`, and ESM. Your runtime or build target must support the specific feature you use. Generator composition requires generator support; retry cancellation requires `AbortController`/`AbortSignal`.
+
+## Verify the install
+
+```ts
+import { Result } from "better-result";
+
+const answer = Result.ok(42);
+
+if (answer.status === "ok") {
+  console.log(answer.value);
+}
+```
+
+Run your normal type-checker. No plugin, transform, or global type declaration is required.
+
+<Callout type="note" title="Tree-shaking and package shape">
+  The package exposes one ESM entry point. Import public symbols from `better-result`; internal file
+  paths are not part of the supported API.
+</Callout>

@@ -1,0 +1,58 @@
+---
+title: Extracting values
+description: Leave Result safely with match or a fallback, and understand when unwrap throws.
+---
+
+## Prefer `match` at handling boundaries
+
+```ts
+const response = result.match({
+  ok: (value) => Response.json(value, { status: 200 }),
+  err: (error) => toErrorResponse(error),
+});
+```
+
+Both branches are visible and the output type is unified.
+
+## Provide a fallback with `unwrapOr`
+
+```ts
+const port = parsePort(input).unwrapOr(3000);
+// number
+```
+
+The fallback may have a different type, so the result is the union of the success and fallback types.
+
+Static forms:
+
+```ts
+Result.unwrapOr(result, defaultValue);
+Result.unwrapOr(defaultValue)(result);
+```
+
+## Assert success with `unwrap`
+
+```ts
+const value = result.unwrap();
+const value = result.unwrap("Configuration must be valid at startup");
+```
+
+On `Err`, `unwrap` throws `Panic`; the error value is preserved as its cause. Use this only where an `Err` proves an invariant is broken or where an outer defect boundary intentionally terminates the operation.
+
+## Do not unwrap routine failures
+
+Avoid:
+
+```ts
+const user = findUser(id).unwrap(); // missing user is expected
+```
+
+Handle or propagate instead:
+
+```ts
+const greeting = findUser(id).map((user) => `Hello, ${user.name}`);
+```
+
+<Callout type="warning" title="unwrap is an assertion">
+  `unwrap` is not a substitute for error handling. Its meaning is: “an Err here is a defect.”
+</Callout>

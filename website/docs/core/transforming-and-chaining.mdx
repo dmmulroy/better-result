@@ -1,0 +1,74 @@
+---
+title: Transforming and chaining
+description: Use map, mapError, andThen, and recovery while preserving precise success and error unions.
+---
+
+## Transform success with `map`
+
+```ts
+const name = findUser(id).map((user) => user.name);
+// Result<string, FindUserError>
+```
+
+`map` runs only for `Ok`. Returning a Result from `map` nests it; use `andThen` to flatten a Result-returning callback.
+
+## Transform errors with `mapError`
+
+```ts
+const user = queryUser(id).mapError(
+  (error) => new LoadUserFailed({ cause: error, message: "Could not load user" }),
+);
+// Result<User, LoadUserFailed>
+```
+
+Use this at abstraction boundaries to translate lower-level errors into the vocabulary the caller owns.
+
+## Chain with `andThen`
+
+```ts
+const result = parseInput(raw).andThen(validateInput).andThen(saveInput);
+// Result<SavedInput, ParseError | ValidationError | SaveError>
+```
+
+`andThen` runs only for `Ok` and unions the existing and next error types. Use `andThenAsync` for a Promise of Result:
+
+```ts
+const result = await parseInput(raw).andThenAsync(async (input) => saveInput(input));
+```
+
+## Recover with `tryRecover`
+
+Recovery runs only for `Err` and must return a Result:
+
+```ts
+const user = findUser(id).tryRecover((error) =>
+  error._tag === "UserNotFound" ? Result.ok(guestUser) : Result.err(error),
+);
+```
+
+Recovery may introduce a different success type. The existing success is preserved:
+
+```ts
+const recovered = loadRemoteConfig().tryRecover(() => Result.ok(defaultConfigPath));
+// Result<RemoteConfig | string, never>
+```
+
+Use `tryRecoverAsync` when recovery returns `Promise<Result<...>>`.
+
+## Static and pipeable forms
+
+Most combinators support data-first and data-last calls:
+
+```ts
+Result.map(result, (value) => value.id);
+Result.map((value: User) => value.id)(result);
+
+Result.andThen(result, validateUser);
+Result.andThen(validateUser)(result);
+```
+
+This supports method chains, direct calls, and functional pipelines without separate APIs.
+
+## Callback safety
+
+Callbacks passed to mapping, chaining, and recovery combinators are assumed not to throw. If one does, the operation throws a `Panic` with the original exception as `cause`.

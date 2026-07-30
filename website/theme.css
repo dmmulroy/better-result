@@ -1,0 +1,95 @@
+/* npmx-inspired monochrome surfaces, sky accent, compact borders, and mono UI. */
+:root {
+  --blume-background: oklch(100% 0 0);
+  --blume-foreground: oklch(14.6% 0 0);
+  --blume-muted: oklch(97.9% 0.001 286.375);
+  --blume-muted-foreground: oklch(39.8% 0 0);
+  --blume-border: oklch(85.14% 0 0);
+  --blume-accent: oklch(50% 0.16 247.27);
+  --blume-accent-foreground: oklch(100% 0 0);
+  --blume-action: oklch(14.6% 0 0);
+  --blume-code-background: oklch(97.9% 0.001 286.375);
+  --blume-radius: 0.375rem;
+}
+
+:root[data-theme="dark"] {
+  --blume-background: oklch(17.1% 0 0);
+  --blume-foreground: oklch(98.2% 0 0);
+  --blume-muted: oklch(19.8% 0 0);
+  --blume-muted-foreground: oklch(74.9% 0 0);
+  --blume-border: oklch(26.9% 0 0);
+  --blume-accent: oklch(78.7% 0.128 230.318);
+  --blume-accent-foreground: oklch(17.1% 0 0);
+  --blume-action: oklch(98.2% 0 0);
+  --blume-code-background: oklch(19.8% 0 0);
+}
+
+html {
+  font-feature-settings: "ss01", "ss03", "cv01", "cv02";
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+button,
+nav,
+[role="navigation"] {
+  letter-spacing: -0.018em;
+}
+
+h1 code,
+h2 code,
+h3 code,
+h4 code {
+  font-size: 0.82em;
+}
+
+::selection {
+  color: var(--blume-accent-foreground);
+  background: var(--blume-accent);
+}
+
+/* A restrained registry-browser grid gives large pages the npmx utility feel. */
+body {
+  background-image:
+    linear-gradient(color-mix(in oklch, var(--blume-border) 18%, transparent) 1px, transparent 1px),
+    linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--blume-border) 18%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 32px 32px;
+  background-attachment: fixed;
+}
+
+article,
+header,
+aside,
+footer {
+  background-color: color-mix(in oklch, var(--blume-background) 94%, transparent);
+}
+
+/* Blume renders featured links first; the package link belongs after the docs tree. */
+aside[data-blume-nav-drawer] {
+  display: flex;
+  flex-direction: column;
+}
+
+aside[data-blume-nav-drawer] > nav:first-of-type {
+  order: 1;
+  margin-top: auto;
+  margin-bottom: 0;
+  padding-top: 1rem;
+  padding-bottom: 0;
+  border-top: 1px solid var(--blume-border);
+  border-bottom: 0;
+}
+
+pre,
+[data-code-block],
+.blume-card {
+  box-shadow: 0 1px 0 color-mix(in oklch, var(--blume-foreground) 5%, transparent);
+}

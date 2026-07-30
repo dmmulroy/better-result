@@ -1,0 +1,66 @@
+---
+title: Panic and defects
+description: Understand which failures throw Panic, how to report them, and why they do not widen Result error types.
+---
+
+`Panic` represents an unrecoverable defect: user-supplied code broke a combinator contract or an asserted invariant failed. It is thrown, not returned as `Err`.
+
+## Why Panic exists
+
+If `.map()` silently converted every thrown callback into `Err<unknown>`, `Result<T, E>` would stop describing expected failures accurately. Panic keeps domain errors typed and defects loud.
+
+## Common Panic sources
+
+- callbacks passed to `map`, `mapError`, `andThen`, recovery, `match`, or observation throw;
+- async callbacks reject;
+- `Result.gen` body or cleanup throws;
+- a generator returns a non-Result value;
+- `unwrap()` sees `Err`;
+- a retry predicate or dynamic delay throws;
+- retry jitter is invalid;
+- an input Promise to `allAsync` or `partitionAsync` rejects;
+- a codec schema throws or rejects instead of returning validation issues.
+
+## Detect and report
+
+```ts
+import { isPanic, Panic } from "better-result";
+
+try {
+  runApplication();
+} catch (error) {
+  if (isPanic(error)) {
+    reportDefect(error.message, error.cause);
+    throw error;
+  }
+}
+```
+
+Equivalent guards:
+
+```ts
+Panic.is(value);
+isPanic(value);
+value instanceof Panic;
+```
+
+`Panic` has `_tag: "Panic"`, `message`, `cause`, stack chaining, and `toJSON()`.
+
+## Throw one deliberately
+
+```ts
+import { panic } from "better-result";
+
+const unreachable = (value: never): never => panic("Unexpected application state", value);
+```
+
+Use this for impossible states and failed invariants, not ordinary validation.
+
+## Boundary guidance
+
+Catch Panic only at a true defect boundary—process entry point, request crash reporter, worker supervisor, or test assertion. Log/report it with appropriate redaction, then usually let the current operation fail.
+
+<Callout type="warning" title="Do not turn Panic back into a generic Err">
+  Broadly catching Panic and returning `Err("something went wrong")` hides defects and makes typed
+  error contracts misleading.
+</Callout>

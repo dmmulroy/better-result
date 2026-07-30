@@ -1,0 +1,79 @@
+---
+title: Error API
+description: Reference for TaggedError, exhaustive and partial matching, UnhandledException, codec errors, and Panic.
+---
+
+## `TaggedError(tag)`
+
+Factory for a generic Error subclass:
+
+```ts
+class NotFound extends TaggedError("NotFound")<{
+  id: string;
+  message: string;
+}> {}
+```
+
+Instances expose `_tag`, declared properties, native Error fields, `toJSON()`, and generator iterator behavior. Concrete classes expose `.is(value)`.
+
+## Guards
+
+| API                       | Narrows to            |
+| ------------------------- | --------------------- |
+| `TaggedError.is(value)`   | `AnyTaggedError`      |
+| `isTaggedError(value)`    | `AnyTaggedError`      |
+| `ConcreteError.is(value)` | the concrete subclass |
+| `Panic.is(value)`         | `Panic`               |
+| `isPanic(value)`          | `Panic`               |
+
+## Matching
+
+| API                                            | Behavior                                             |
+| ---------------------------------------------- | ---------------------------------------------------- |
+| `matchError(error, handlers)`                  | Exhaustive match over every `_tag`                   |
+| `matchError(handlers)(error)`                  | Data-last exhaustive match                           |
+| `matchErrorPartial(error, handlers)`           | Handle selected tags; return others unchanged        |
+| `matchErrorPartial(error, handlers, fallback)` | Handle selected tags; transform others with fallback |
+| `matchErrorPartial(handlers, fallback)(error)` | Data-last partial match                              |
+
+Handler return types are inferred as a union when they differ.
+
+## Built-in error classes
+
+### `UnhandledException`
+
+Returned by `Result.try` and `Result.tryPromise` when no custom catch translator is supplied.
+
+| Property  | Type                   |
+| --------- | ---------------------- |
+| `_tag`    | `"UnhandledException"` |
+| `cause`   | `unknown`              |
+| `message` | `string`               |
+
+### `ResultSerializationError`
+
+Returned when a selected serialization schema reports validation issues.
+
+| Property | Type                                     |
+| -------- | ---------------------------------------- |
+| `_tag`   | `"ResultSerializationError"`             |
+| `value`  | `unknown`                                |
+| `issues` | optional readonly Standard Schema issues |
+
+### `ResultDeserializationError`
+
+Returned for an invalid serialized envelope or when a selected payload schema reports issues.
+
+| Property | Type                                                                     |
+| -------- | ------------------------------------------------------------------------ |
+| `_tag`   | `"ResultDeserializationError"`                                           |
+| `value`  | `unknown`                                                                |
+| `issues` | optional readonly Standard Schema issues; absent for an invalid envelope |
+
+### `Panic`
+
+Thrown for defects. Exposes `_tag: "Panic"`, `message`, optional `cause`, `toJSON()`, static `.is`, and generator iterator behavior.
+
+## `panic(message, cause?)`
+
+Throws a new `Panic` and returns `never` at the type level.

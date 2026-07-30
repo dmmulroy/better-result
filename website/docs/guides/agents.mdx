@@ -1,0 +1,69 @@
+---
+title: Documentation for agents
+description: Give coding agents precise better-result context through Markdown exports, llms.txt, and portable repository skills.
+---
+
+This site is built for browser readers and plain-text-searching coding agents from the same source.
+
+## Machine-readable routes
+
+| Route                     | Use                              |
+| ------------------------- | -------------------------------- |
+| `/llms.txt`               | Compact documentation index      |
+| `/llms-full.txt`          | Full documentation corpus        |
+| `/<page>.md`              | Clean Markdown for one page      |
+| `/<page>.mdx`             | Original MDX source for one page |
+| `/agent-readability.json` | Generated readability metadata   |
+
+Point an agent at the smallest source that answers its question. A focused page costs less context than the full corpus.
+
+## Portable skills
+
+The repository ships two agent skills:
+
+- [`adopt-better-result`](https://github.com/dmmulroy/better-result/tree/3.0/skills/adopt-better-result) audits a TypeScript repository or migrates one named vertical slice.
+- [`migrate-better-result-3`](https://github.com/dmmulroy/better-result/tree/3.0/skills/migrate-better-result-3) guides migration from older better-result APIs.
+
+Install with skills.sh-compatible tooling:
+
+```sh
+npx skills add dmmulroy/better-result@adopt-better-result
+npx skills add dmmulroy/better-result@migrate-better-result-3
+```
+
+## Prompting contract
+
+Useful agent instructions name the boundary and desired behavior:
+
+```text
+Use better-result for the createUser vertical slice. Return tagged domain errors
+from validation and persistence, compose them with Result.gen, and exhaustively
+map them to the existing HTTP response contract. Do not convert defects to Err.
+```
+
+Avoid asking an agent to “Result-ify everything.” Result boundaries should correspond to caller decisions.
+
+## Search vocabulary
+
+Use literal public names in searches and prompts:
+
+- `Result.tryPromise` for exceptions, retries, jitter, and abort signals;
+- `Result.gen` and `Result.await` for generator composition;
+- `TaggedError`, `matchError`, and `matchErrorPartial` for error unions;
+- `Result.codec` for validated transport/persistence boundaries;
+- `Panic`, `isPanic`, and `panic` for defects;
+- `Result.all`, `allAsync`, `partition`, and `partitionAsync` for collections.
+
+<Visibility for="agents">
+
+**Agent implementation checklist**
+
+1. Inspect the installed package declarations or repository source before editing.
+2. Inventory each expected failure from source to handling boundary.
+3. Define tagged error variants in the owning domain vocabulary.
+4. Keep unknown exceptions at adapters and translate them with `Result.try` or `Result.tryPromise`.
+5. Compose Results without `unwrap()` in ordinary control flow.
+6. Handle the complete inferred error union at a policy boundary.
+7. Test each branch and run formatting, lint, type-checking, tests, and build.
+
+</Visibility>

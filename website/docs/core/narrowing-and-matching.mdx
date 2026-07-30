@@ -1,0 +1,89 @@
+---
+title: Narrowing and matching
+description: Inspect Result status, use type guards, and fold both branches into one output.
+---
+
+## Discriminant narrowing
+
+```ts
+if (result.status === "ok") {
+  result.value;
+} else {
+  result.error;
+}
+```
+
+`status` is the serializable discriminant: `"ok"` or `"error"`.
+
+## Static guards
+
+```ts
+if (Result.isOk(result)) {
+  use(result.value);
+}
+
+if (Result.isError(result)) {
+  report(result.error);
+}
+```
+
+## Instance guards
+
+```ts
+if (result.isOk()) {
+  use(result.value);
+}
+
+if (result.isErr()) {
+  report(result.error);
+}
+```
+
+`isErr()` is the instance spelling; `Result.isError()` is the static spelling.
+
+## `match`
+
+Use `match` when both branches produce the same output type and you are ready to leave `Result`:
+
+```ts
+const statusCode = result.match({
+  ok: () => 200,
+  err: (error) => (error._tag === "NotFound" ? 404 : 500),
+});
+```
+
+Static data-first and data-last forms are also available:
+
+```ts
+Result.match(result, {
+  ok: (value) => value.name,
+  err: () => "Anonymous",
+});
+
+const displayName = Result.match({
+  ok: (value: User) => value.name,
+  err: (_error: FindUserError) => "Anonymous",
+});
+
+displayName(result);
+```
+
+## Match Result first, then tagged errors
+
+```ts
+const response = result.match({
+  ok: (user) => ({ status: 200, body: user }),
+  err: (error) =>
+    matchError(error, {
+      UserNotFound: () => ({ status: 404, body: null }),
+      DatabaseUnavailable: () => ({ status: 503, body: null }),
+    }),
+});
+```
+
+This keeps the two decisions explicit: Result branch first, error variant second.
+
+<Callout type="note" title="Thrown handlers are defects">
+  A throwing `match` handler becomes `Panic`; return a value or a Result from a different combinator
+  instead of throwing expected failures.
+</Callout>

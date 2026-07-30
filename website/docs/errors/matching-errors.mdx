@@ -1,0 +1,78 @@
+---
+title: Matching errors
+description: Handle tagged-error unions exhaustively or partially with inferred handler return unions.
+---
+
+## Exhaustive `matchError`
+
+```ts
+const message = matchError(error, {
+  UserNotFound: (error) => `No user ${error.userId}`,
+  PermissionDenied: (error) => `Missing permission ${error.permission}`,
+});
+```
+
+Every `_tag` in the input union needs a handler. Handler parameters narrow to their exact error class. Different handler outputs produce a return union.
+
+```ts
+const outcome = matchError(error, {
+  UserNotFound: () => 404,
+  PermissionDenied: () => "forbidden" as const,
+});
+// number | "forbidden"
+```
+
+## Data-last matching
+
+Annotate variant-specific parameters when the error union is not known until application:
+
+```ts
+const toMessage = matchError({
+  UserNotFound: (error: UserNotFound) => `No user ${error.userId}`,
+  PermissionDenied: (error: PermissionDenied) => error.message,
+});
+
+const message = toMessage(error);
+```
+
+## Partial matching with identity fallback
+
+`matchErrorPartial` returns unhandled errors unchanged by default:
+
+```ts
+const transformed = matchErrorPartial(error, {
+  UserNotFound: (error) => `No user ${error.userId}`,
+});
+// string | PermissionDenied
+```
+
+This makes incremental handling explicit instead of discarding the rest of the union.
+
+## Custom fallback
+
+```ts
+const message = matchErrorPartial(
+  error,
+  { UserNotFound: (error) => `No user ${error.userId}` },
+  (unhandled) => `Unexpected failure: ${unhandled.message}`,
+);
+```
+
+## Recover selected variants
+
+Pass `Result.err` as the fallback to preserve unhandled variants while recovering one:
+
+```ts
+const recovered = result.tryRecover(
+  matchErrorPartial(
+    {
+      UserNotFound: (_error: UserNotFound) => Result.ok(guestUser),
+    },
+    Result.err,
+  ),
+);
+```
+
+## Match at boundaries
+
+Keep domain functions returning typed errors. Match where the application can choose an HTTP status, CLI exit code, user message, retry policy, or compensating action.
