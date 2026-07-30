@@ -76,6 +76,6 @@ const response = result.match({
 });
 ```
 
-Error fields should provide the facts required for retries, status mapping, compensation, logging, and user presentation without parsing the message string. Treat `match` as a reserved TaggedError instance method; do not declare an error payload property or subclass method with that name.
+Error fields should provide the facts required for retries, status mapping, compensation, logging, and user presentation without parsing the message string. Treat `match` as a reserved TaggedError instance method; TypeScript rejects payload properties and incompatible subclass members with that name. If an exhaustive `.match()` or `matchError` handler throws, the operation throws `Panic` with the original exception as `cause`.
 
 For errors crossing serialized boundaries, apply [`result-boundaries.md`](result-boundaries.md). Expose stable public codes and safe fields; reconstruct the appropriate tagged error during trusted deserialization when the receiving side needs domain behavior.

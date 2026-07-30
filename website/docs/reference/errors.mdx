@@ -37,7 +37,9 @@ Instances expose `_tag`, declared properties, native Error fields, `toJSON()`, e
 | `matchErrorPartial(error, handlers, fallback)` | Handle selected tags; transform others with fallback |
 | `matchErrorPartial(handlers, fallback)(error)` | Data-last partial match                              |
 
-Handler return types are inferred as a union when they differ.
+Handler return types are inferred as a union when they differ. If an exhaustive `.match()` or `matchError` handler throws, the operation throws `Panic` with the original exception as `cause`. `matchErrorPartial` retains its fallback and handler exception behavior.
+
+The `match` property name is reserved on `TaggedError` payloads; TypeScript also rejects incompatible subclass members with that name.
 
 ## Built-in error classes
 

@@ -40,7 +40,9 @@ const message = error.match({
 });
 ```
 
-The handler map must cover every variant in the receiver's error union. Each handler receives its concrete error subtype. Use the standalone `matchError` function for structurally tagged errors or data-last matching.
+The handler map must cover every variant in the receiver's error union. Each handler receives its concrete error subtype. If the selected handler throws, `.match()` throws `Panic` with that exception as its cause. Use the standalone `matchError` function for structurally tagged errors or data-last matching.
+
+`match` is reserved for this method. A TaggedError payload property or incompatible subclass member named `match` is rejected by TypeScript.
 
 ## Add a computed message
 

@@ -74,7 +74,9 @@ const response = result.match({
 });
 ```
 
-Use `matchError` for structurally tagged errors or data-last matching. Before adopting `.match()`, rename any TaggedError payload property or subclass method already named `match`.
+Use `matchError` for structurally tagged errors or data-last matching. Both exhaustive forms turn a selected handler exception into `Panic` and preserve the exception as `cause`.
+
+`match` is now a reserved TaggedError instance name. TypeScript rejects payload properties and incompatible subclass members with that name; rename any collision during migration.
 
 ## Collection additions
 

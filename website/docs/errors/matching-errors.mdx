@@ -48,7 +48,9 @@ const message = matchError(error, {
 });
 ```
 
-The standalone function has the same exhaustive narrowing and return inference as `.match()`.
+The standalone function has the same exhaustive narrowing, return inference, and defect behavior as `.match()`. If the selected exhaustive handler throws, `.match()` and `matchError` throw `Panic` with the original exception as `cause`.
+
+`match` is a reserved `TaggedError` instance name. The factory rejects payload property types named `match`, preventing constructor assignment from shadowing the method.
 
 ## Data-last matching
 

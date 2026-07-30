@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  Panic,
   TaggedError,
   UnhandledException,
   ResultDeserializationError,
@@ -254,7 +255,7 @@ describe("TaggedError", () => {
       expect(selected).toBe(error);
     });
 
-    it("propagates an exception from the selected handler", () => {
+    it("panics when the selected handler throws", () => {
       const error = new NetworkError({
         url: "https://api.example.com",
         message: "failed",
@@ -271,7 +272,11 @@ describe("TaggedError", () => {
         thrown = cause;
       }
 
-      expect(thrown).toBe(error);
+      expect(Panic.is(thrown)).toBe(true);
+      if (Panic.is(thrown)) {
+        expect(thrown.message).toBe("matchError handler threw");
+        expect(thrown.cause).toBe(error);
+      }
     });
   });
 
@@ -301,7 +306,7 @@ describe("TaggedError", () => {
       expect(matchAppError(error)).toBe("network: https://api.example.com");
     });
 
-    it("propagates an exception from the selected handler", () => {
+    it("panics when the selected handler throws", () => {
       const throwSelectedHandler = (error: AppError) =>
         matchError(error, {
           NotFoundError: (e) => `missing: ${e.id}`,
@@ -322,7 +327,11 @@ describe("TaggedError", () => {
         thrown = cause;
       }
 
-      expect(thrown).toBe(error);
+      expect(Panic.is(thrown)).toBe(true);
+      if (Panic.is(thrown)) {
+        expect(thrown.message).toBe("matchError handler threw");
+        expect(thrown.cause).toBe(error);
+      }
     });
 
     it("matches structurally tagged errors without requiring TaggedError methods", () => {

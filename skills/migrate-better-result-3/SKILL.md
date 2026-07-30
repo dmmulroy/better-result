@@ -62,7 +62,7 @@ Account for changed control flow: serialization can now return `ResultSerializat
 Type-check after the mechanical and codec changes. Resolve diagnostics using [references/v3-api-diff.md](references/v3-api-diff.md), especially:
 
 - `tryRecover` and `tryRecoverAsync` now preserve the original success and union it with a different recovered success type.
-- `matchError`, `matchErrorPartial`, and the additive `TaggedError#match` method infer unions from divergent handler returns. Before adopting the instance method, search error payloads and subclasses for a member named `match`.
+- `matchError`, `matchErrorPartial`, and the additive `TaggedError#match` method infer unions from divergent handler returns. Exhaustive matching turns thrown handlers into `Panic`; `match` is reserved, so rename payload or subclass collisions rejected by the v3 types.
 - `matchErrorPartial` may omit its fallback; an unhandled tagged error is then returned unchanged.
 - `Result.partition` now supports heterogeneous inputs; `all`, `allAsync`, and `partitionAsync` are new.
 - `Result.tryPromise` adds abort context, dynamic delays, and jitter while retaining valid v2 static retry configurations.

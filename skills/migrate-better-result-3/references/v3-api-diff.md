@@ -121,7 +121,9 @@ const response = result.match({
 });
 ```
 
-No annotation is needed for `error` when the enclosing Result retains its error union. Keep `matchError` for structurally tagged errors and data-last matching. Before adopting the method, search TaggedError payloads and subclasses for an existing member named `match`; rename collisions because payload assignment can shadow the prototype method.
+No annotation is needed for `error` when the enclosing Result retains its error union. Keep `matchError` for structurally tagged errors and data-last matching. Both exhaustive forms turn a selected handler exception into `Panic` and preserve the exception as `cause`.
+
+`match` is a reserved TaggedError instance name. The v3 types reject payload properties and incompatible subclass members with that name; search for and rename collisions during migration.
 
 ### Validated codecs and errors
 

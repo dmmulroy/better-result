@@ -230,9 +230,9 @@ Errors from all yielded Results are automatically collected into the final error
 Use `mapError` on the output of `Result.gen()` to unify multiple error types into a single type:
 
 ```ts
-class ParseError extends TaggedError("ParseError")<{ message: string }>() {}
-class ValidationError extends TaggedError("ValidationError")<{ message: string }>() {}
-class AppError extends TaggedError("AppError")<{ source: string; message: string }>() {}
+class ParseError extends TaggedError("ParseError")<{ message: string }> {}
+class ValidationError extends TaggedError("ValidationError")<{ message: string }> {}
+class AppError extends TaggedError("AppError")<{ source: string; message: string }> {}
 
 const result = Result.gen(function* () {
   const parsed = yield* parseInput(input); // Err: ParseError
@@ -290,8 +290,8 @@ The same signal and failed attempt number are available as the second `shouldRet
 Retry only for specific error types using `shouldRetry`:
 
 ```ts
-class NetworkError extends TaggedError("NetworkError")<{ message: string }>() {}
-class ValidationError extends TaggedError("ValidationError")<{ message: string }>() {}
+class NetworkError extends TaggedError("NetworkError")<{ message: string }> {}
+class ValidationError extends TaggedError("ValidationError")<{ message: string }> {}
 
 const result = await Result.tryPromise(
   {
@@ -342,7 +342,7 @@ Retry callbacks are synchronous. For decisions that require async operations (ra
 class ApiError extends TaggedError("ApiError")<{
   message: string;
   rateLimited: boolean;
-}>() {}
+}> {}
 
 const result = await Result.tryPromise(
   {
@@ -527,6 +527,9 @@ const describeErrorDirectly = (error: AppError) =>
     ValidationError: (e) => `Bad field: ${e.field}`,
   });
 
+// If a selected handler throws, match and matchError throw Panic with that exception as cause.
+// `match` is reserved and cannot be declared as a TaggedError payload property.
+
 // Result error handlers infer the union, so no annotation is needed
 const response = result.match({
   ok: (user) => ({ status: 200, body: user }),
@@ -602,7 +605,7 @@ class NetworkError extends TaggedError("NetworkError")<{
   url: string;
   status: number;
   message: string;
-}>() {
+}> {
   constructor(args: { url: string; status: number }) {
     super({ ...args, message: `Request to ${args.url} failed: ${args.status}` });
   }
@@ -807,7 +810,7 @@ Migration differences:
 
 | Method                                             | Description                                             |
 | -------------------------------------------------- | ------------------------------------------------------- |
-| `TaggedError(tag)<Props>()`                        | Factory for tagged error class                          |
+| `TaggedError(tag)<Props>`                          | Factory for tagged error class                          |
 | `TaggedError.is(value)`                            | Type guard for any TaggedError                          |
 | `error.match(handlers)`                            | Exhaustive instance pattern match by `_tag`             |
 | `matchError(err, handlers)`                        | Exhaustive standalone pattern match by `_tag`           |

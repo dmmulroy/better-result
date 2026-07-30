@@ -6,6 +6,21 @@ class ErrorB extends TaggedError("ErrorB")<{}> {}
 class ErrorC extends TaggedError("ErrorC")<{}> {}
 class DetailedError extends TaggedError("DetailedError")<{ detail: string }> {}
 
+// @ts-expect-error - match is reserved for the exhaustive instance method
+class ReservedMatchPropertyError extends TaggedError("ReservedMatchPropertyError")<{
+  match: string;
+}> {}
+
+// @ts-expect-error - match is reserved even when the payload value is undefined
+class UndefinedReservedMatchPropertyError extends TaggedError(
+  "UndefinedReservedMatchPropertyError",
+)<{
+  match: undefined;
+}> {}
+
+void ReservedMatchPropertyError;
+void UndefinedReservedMatchPropertyError;
+
 class StructuralTaggedError extends Error {
   readonly _tag = "StructuralTaggedError";
 }

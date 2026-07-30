@@ -11,7 +11,7 @@ If `.map()` silently converted every thrown callback into `Err<unknown>`, `Resul
 
 ## Common Panic sources
 
-- callbacks passed to `map`, `mapError`, `andThen`, recovery, `match`, or observation throw;
+- callbacks passed to `map`, `mapError`, `andThen`, recovery, Result or TaggedError `match`, `matchError`, or observation throw;
 - async callbacks reject;
 - `Result.gen` body or cleanup throws;
 - a generator returns a non-Result value;
