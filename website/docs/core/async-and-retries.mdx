@@ -9,12 +9,12 @@ For application workflows, prefer [`Result.gen` with `Result.await`](/core/gener
 
 ```ts
 const result = await Result.tryPromise({
-  try: ({ signal }) => fetch(url, { signal }),
+  try: () => fetch(url),
   catch: (cause) => new RequestFailed({ url, cause, message: "Request failed" }),
 });
 ```
 
-The attempt context is `{ attempt, signal? }`. `attempt` starts at 1.
+The attempt context always includes `attempt`, starting at 1. Its optional `signal` is the exact signal supplied in the top-level configuration; when the caller supplies none, `signal` is `undefined`. `Result.tryPromise` does not create an internal abort signal.
 
 ## Handle fulfilled HTTP errors
 
@@ -28,7 +28,7 @@ class HttpResponseError extends TaggedError("HttpResponseError")<{
 }> {}
 
 const successfulResponse = await Result.tryPromise({
-  try: ({ signal }) => fetch(url, { signal }),
+  try: () => fetch(url),
   catch: (cause) => new NetworkError({ url, cause, message: "Network request failed" }),
 }).then(
   Result.andThen((response: Response) =>

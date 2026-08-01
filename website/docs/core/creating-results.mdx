@@ -68,7 +68,7 @@ Use an object to create a typed error:
 
 ```ts
 const response = await Result.tryPromise({
-  try: ({ signal }) => fetch(url, { signal }),
+  try: () => fetch(url),
   catch: (cause) => new NetworkError({ cause, url, message: "Request failed" }),
 });
 ```
