@@ -1,6 +1,6 @@
 # better-result
 
-A small, dependency-free Result type for TypeScript with typed errors, safe callbacks, and generator-based composition.
+Lightweight Result type for TypeScript with generator-based composition.
 
 [Documentation](https://better-result.dev) · [Quickstart](https://better-result.dev/getting-started/quickstart) · [API reference](https://better-result.dev/reference/result) · [Migrate from 2.x](https://better-result.dev/migration/from-2)
 
