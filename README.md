@@ -4,9 +4,9 @@ Lightweight Result type for TypeScript with generator-based composition.
 
 [Documentation](https://better-result.dev) · [Quickstart](https://better-result.dev/getting-started/quickstart) · [API reference](https://better-result.dev/reference/result) · [Migrate from 2.x](https://better-result.dev/migration/from-2)
 
-- **Typed by construction:** success and error types remain visible through every transformation.
-- **Linear composition:** use `yield*` to write multi-step workflows without nested callbacks.
-- **Defects stay distinct:** expected failures are `Err`; unexpected callback failures become `Panic`.
+- **Make failures explicit:** TypeScript shows what a function returns when it succeeds and what can go wrong.
+- **Write multi-step workflows in order:** `yield*` passes successful values to the next step and stops on the first failure.
+- **Keep expected failures separate from bugs:** handle expected failures as normal return values; unexpected exceptions still throw.
 
 ```ts
 import { Result, TaggedError } from "better-result";
