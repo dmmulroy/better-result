@@ -11,50 +11,24 @@ A Result object in memory is not proof that JSON or stored data has the same sha
 
 ## Define both directions
 
+Define four named schemas at the boundary: success and error schemas for values going to the wire, and success and error schemas for values coming from the wire. Keep each schema's validation and mapping outside the codec declaration.
+
 ```ts
-import { z } from "zod";
 import { Result } from "better-result";
-
-const UserSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  createdAt: z.date(),
-});
-
-const UserWireSchema = z.object({
-  id: z.string(),
-  display_name: z.string(),
-  created_at: z.string(),
-});
-
-const DomainErrorSchema = z.object({ code: z.string(), message: z.string() });
-const ErrorWireSchema = z.object({ type: z.string(), message: z.string() });
 
 const UserResultCodec = Result.codec({
   serialize: {
-    ok: UserSchema.transform((user) => ({
-      id: user.id,
-      display_name: user.name,
-      created_at: user.createdAt.toISOString(),
-    })),
-    err: DomainErrorSchema.transform((error) => ({
-      type: error.code,
-      message: error.message,
-    })),
+    ok: UserToWireSchema,
+    err: DomainErrorToWireSchema,
   },
   deserialize: {
-    ok: UserWireSchema.transform((wire) => ({
-      id: wire.id,
-      name: wire.display_name,
-      createdAt: new Date(wire.created_at),
-    })),
-    err: ErrorWireSchema.transform((wire) => ({
-      code: wire.type,
-      message: wire.message,
-    })),
+    ok: UserFromWireSchema,
+    err: DomainErrorFromWireSchema,
   },
 });
 ```
+
+The named schemas may validate identical in-memory and wire shapes or map between different representations such as `Date` and ISO text. `Result.codec` only assembles those four boundary contracts.
 
 ## Serialize
 

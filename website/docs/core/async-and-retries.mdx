@@ -3,6 +3,8 @@ title: Async operations and retries
 description: Capture promises, retry bounded failures, add backoff and jitter, and propagate cancellation.
 ---
 
+For application workflows, prefer [`Result.gen` with `Result.await`](/core/generator-composition#asynchronous-workflows). For a short `Promise<Result<...>>` pipeline, chain [static async combinators](/core/transforming-and-chaining) with `.then(Result.andThenAsync(...))`. This page focuses on safely creating those asynchronous Results and controlling retries.
+
 ## Capture a Promise
 
 ```ts
@@ -13,6 +15,38 @@ const result = await Result.tryPromise({
 ```
 
 The attempt context is `{ attempt, signal? }`. `attempt` starts at 1.
+
+## Handle fulfilled HTTP errors
+
+`fetch` rejects for network and cancellation failures, not for HTTP error statuses. Check fulfilled responses explicitly:
+
+```ts
+class HttpResponseError extends TaggedError("HttpResponseError")<{
+  status: number;
+  url: string;
+  message: string;
+}> {}
+
+const successfulResponse = await Result.tryPromise({
+  try: ({ signal }) => fetch(url, { signal }),
+  catch: (cause) => new NetworkError({ url, cause, message: "Network request failed" }),
+}).then(
+  Result.andThen((response: Response) =>
+    response.ok
+      ? Result.ok(response)
+      : Result.err(
+          new HttpResponseError({
+            status: response.status,
+            url: response.url,
+            message: `Request failed with status ${response.status}`,
+          }),
+        ),
+  ),
+);
+// Result<Response, NetworkError | HttpResponseError>
+```
+
+A retry configured on `Result.tryPromise` retries rejected attempts. If selected HTTP statuses are also retryable, convert and retry them in an application operation whose policy explicitly covers status responses.
 
 ## Static retry policy
 

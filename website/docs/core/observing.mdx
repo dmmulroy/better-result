@@ -35,7 +35,18 @@ const result = loadUser(id).tapBoth({
 });
 ```
 
-`tapBothAsync` takes two Promise-returning handlers.
+For a `Promise<Result<...>>`, chain the static async combinator instead of awaiting only to call an instance method:
+
+```ts
+const observed = await fetchUser(userId).then(
+  Result.tapBothAsync({
+    ok: (user: User) => trace("user.loaded", { userId: user.id }),
+    err: (error: FetchUserError) => trace("user.load_failed", { tag: error._tag }),
+  }),
+);
+```
+
+`tapBothAsync` selects one Promise-returning handler and preserves the original Result.
 
 ## Static and data-last forms
 

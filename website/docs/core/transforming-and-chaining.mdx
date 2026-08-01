@@ -30,11 +30,26 @@ const result = parseInput(raw).andThen(validateInput).andThen(saveInput);
 // Result<SavedInput, ParseError | ValidationError | SaveError>
 ```
 
-`andThen` runs only for `Ok` and unions the existing and next error types. Use `andThenAsync` for a Promise of Result:
+`andThen` runs only for `Ok` and unions the existing and next error types. Use the static `Result.andThenAsync` when the next operation returns a Promise of Result:
 
 ```ts
-const result = await parseInput(raw).andThenAsync(async (input) => saveInput(input));
+const result = await Result.andThenAsync(parseInput(raw), (input) => saveInput(input));
 ```
+
+## Compose `Promise<Result>` pipelines
+
+When an operation already returns `Promise<Result<...>>`, Promise chaining composes with static, data-last combinators:
+
+```ts
+const postCount = await fetchUser(userId)
+  .then(Result.andThenAsync((user: User) => fetchPosts(user.id)))
+  .then(Result.map((posts: ReadonlyArray<Post>) => posts.length));
+// Result<number, UserNotFound | FetchPostsFailed>
+```
+
+`Promise.then` unwraps each outer Promise. `Result.andThenAsync` runs the next asynchronous operation only for `Ok`, while `Result.map` transforms the eventual success. Both error types remain visible.
+
+Use this form for a short pipeline. Prefer [`Result.gen` with `Result.await`](/core/generator-composition#asynchronous-workflows) when a workflow has several named steps or needs local intermediate values.
 
 ## Recover with `tryRecover`
 
@@ -53,7 +68,18 @@ const recovered = loadRemoteConfig().tryRecover(() => Result.ok(defaultConfigPat
 // Result<RemoteConfig | string, never>
 ```
 
-Use `tryRecoverAsync` when recovery returns `Promise<Result<...>>`.
+Use `tryRecoverAsync` when recovery returns `Promise<Result<...>>`:
+
+```ts
+const user = await fetchUser(userId).then(
+  Result.tryRecoverAsync(async (error: FetchUserError) =>
+    error._tag === "NetworkUnavailable" ? await readCachedUser(userId) : Result.err(error),
+  ),
+);
+// Result<User, UserNotFound | CacheMiss>
+```
+
+The async callback still returns a Result. Rejection is a callback defect and becomes `Panic`; capture expected Promise failure inside the recovery operation.
 
 ## Static and pipeable forms
 

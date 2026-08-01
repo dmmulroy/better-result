@@ -83,7 +83,7 @@ Tuple inputs preserve success positions and union their errors. Async helpers tu
 ```ts
 const codec = Result.codec({
   serialize: { ok: okToWireSchema, err: errorToWireSchema },
-  deserialize: { ok: wireToOkSchema, err: wireToErrorSchema },
+  deserialize: { ok: okFromWireSchema, err: errorFromWireSchema },
 });
 ```
 

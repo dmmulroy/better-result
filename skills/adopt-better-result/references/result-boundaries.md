@@ -16,7 +16,7 @@ Filesystem, database, subprocess, HTTP-client, and SDK calls are also failure-pr
 
 ## Define an explicit wire contract
 
-Create one named codec for each boundary contract. Its Standard Schema-compatible schemas must:
+Create one named codec for each boundary contract. Pass four named directional schemas to `Result.codec`; define their validation and mapping outside the codec declaration. Those Standard Schema-compatible schemas must:
 
 - serialize both success and error payloads
 - validate the outer Result envelope and selected payload
@@ -34,8 +34,8 @@ const CustomerResultCodec = Result.codec({
     err: CustomerErrorToWireSchema,
   },
   deserialize: {
-    ok: WireToCustomerSchema,
-    err: WireToCustomerErrorSchema,
+    ok: CustomerFromWireSchema,
+    err: CustomerErrorFromWireSchema,
   },
 });
 ```

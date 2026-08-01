@@ -20,35 +20,24 @@ Scope this migration branch to boundaries that relied on the removed Result help
 
 ## 2. Define all four schemas
 
-`Result.codec` requires an Ok and Err schema for both directions:
+`Result.codec` requires an Ok and Err schema for both directions. Define and name those schemas outside the codec declaration:
 
 ```ts
 import { Result, ResultDeserializationError } from "better-result";
-import { z } from "zod";
-
-const UserWireSchema = z.object({
-  id: z.string(),
-  displayName: z.string(),
-});
-
-const ValidationErrorWireSchema = z.object({
-  code: z.string(),
-  message: z.string(),
-});
 
 const UserResultCodec = Result.codec({
   serialize: {
-    ok: UserWireSchema,
-    err: ValidationErrorWireSchema,
+    ok: UserToWireSchema,
+    err: ValidationErrorToWireSchema,
   },
   deserialize: {
-    ok: UserWireSchema,
-    err: ValidationErrorWireSchema,
+    ok: UserFromWireSchema,
+    err: ValidationErrorFromWireSchema,
   },
 });
 ```
 
-Identity-like schemas must still validate. Prefer the repository's existing payload schemas over parallel codec-only definitions. When in-memory and wire types differ, use schema transforms in each direction rather than casting the envelope.
+Identity-like schemas must still validate. Prefer the repository's existing payload schemas over parallel codec-only definitions. When in-memory and wire types differ, implement that mapping inside each named directional schema rather than casting the envelope or embedding schema construction in `Result.codec`.
 
 ### Share mechanics without erasing contracts
 

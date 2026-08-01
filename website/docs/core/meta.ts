@@ -8,8 +8,8 @@ export default defineMeta({
   pages: [
     "creating-results",
     "narrowing-and-matching",
-    "transforming-and-chaining",
     "generator-composition",
+    "transforming-and-chaining",
     "async-and-retries",
     "collections",
     "observing",

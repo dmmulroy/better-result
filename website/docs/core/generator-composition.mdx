@@ -5,6 +5,8 @@ description: Compose Results linearly with yield*, automatic short-circuiting, a
 
 `Result.gen` turns generator syntax into railway-style composition. `yield*` unwraps `Ok` values and stops at the first `Err`.
 
+Prefer `Result.gen` for application workflows with several fallible steps. For asynchronous workflows, pair it with `Result.await` so intermediate values stay local and every yielded error remains in the inferred union.
+
 ## Synchronous workflows
 
 ```ts
@@ -38,7 +40,7 @@ This is equivalent to `yield* Result.err(new InactiveUser(...))`.
 
 ## Asynchronous workflows
 
-Use an async generator and `Result.await` for `Promise<Result<T, E>>`:
+This is the preferred style for composing several `Promise<Result<T, E>>` operations. Use an async generator and wrap each Promise with `Result.await`:
 
 ```ts
 const dashboard = await Result.gen(async function* () {

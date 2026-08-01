@@ -29,7 +29,7 @@ class NotFound extends TaggedError("NotFound")<{ id: string; message: string }> 
 ```ts
 const codec = Result.codec({
   serialize: { ok: DomainToWireSchema, err: ErrorToWireSchema },
-  deserialize: { ok: WireToDomainSchema, err: WireToErrorSchema },
+  deserialize: { ok: DomainFromWireSchema, err: ErrorFromWireSchema },
 });
 
 const encoded = await codec.serialize(result);

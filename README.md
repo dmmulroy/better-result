@@ -1,8 +1,37 @@
 # better-result
 
-Lightweight Result type for TypeScript with generator-based composition.
+A small, dependency-free Result type for TypeScript with typed errors, safe callbacks, and generator-based composition.
 
-📖 **[Documentation](https://better-result.dev/core/creating-results)**
+[Documentation](https://better-result.dev) · [Quickstart](https://better-result.dev/getting-started/quickstart) · [API reference](https://better-result.dev/reference/result) · [Migrate from 2.x](https://better-result.dev/migration/from-2)
+
+- **Typed by construction:** success and error types remain visible through every transformation.
+- **Linear composition:** use `yield*` to write multi-step workflows without nested callbacks.
+- **Defects stay distinct:** expected failures are `Err`; unexpected callback failures become `Panic`.
+
+```ts
+import { Result, TaggedError } from "better-result";
+
+class InvalidPort extends TaggedError("InvalidPort")<{
+  input: string;
+  message: string;
+}> {}
+
+const parsePort = (input: string) => {
+  const port = Number(input);
+  return Number.isInteger(port) && port > 0 && port <= 65_535
+    ? Result.ok(port)
+    : Result.err(new InvalidPort({ input, message: "Expected a port from 1 to 65535" }));
+};
+
+const message = parsePort(process.env.PORT ?? "3000")
+  .map((port) => `http://localhost:${port}`)
+  .match({
+    ok: (address) => `Listening at ${address}`,
+    err: (error) => `Invalid configuration: ${error.message}`,
+  });
+```
+
+`parsePort` returns `Result<number, InvalidPort>`. Callers cannot use the port until they handle the failure.
 
 ## Install
 
@@ -10,829 +39,599 @@ Lightweight Result type for TypeScript with generator-based composition.
 npm install better-result
 ```
 
-Or with Bun / pnpm:
-
 ```sh
-bun add better-result
 pnpm add better-result
+# or: bun add better-result
 ```
 
-## Quick Start
-
-```ts
-import { Result } from "better-result";
-
-// Wrap throwing functions
-const parsed = Result.try(() => JSON.parse(input));
-
-// Check and use
-if (Result.isOk(parsed)) {
-  console.log(parsed.value);
-} else {
-  console.error(parsed.error);
-}
-
-// Or use pattern matching
-const message = parsed.match({
-  ok: (data) => `Got: ${data.name}`,
-  err: (e) => `Failed: ${e.message}`,
-});
-```
+better-result is ESM-only and has zero runtime dependencies.
 
 ## Contents
 
-- [Creating Results](#creating-results)
-- [Transforming Results](#transforming-results)
-- [Handling Errors](#handling-errors)
-- [Observing Results](#observing-results)
-- [Extracting Values](#extracting-values)
-- [Generator Composition](#generator-composition)
-- [Retry Support](#retry-support)
-- [UnhandledException](#unhandledexception)
-- [Panic](#panic)
-- [Tagged Errors](#tagged-errors)
-- [Serialization](#serialization)
-- [API Reference](#api-reference)
-- [Agents & AI](#agents--ai)
+- [Mental model](#mental-model)
+- [Build a typed workflow](#build-a-typed-workflow)
+- [Compose asynchronous workflows](#compose-asynchronous-workflows)
+- [Transform and compose Results](#transform-and-compose-results)
+- [Recover from errors](#recover-from-errors)
+- [Observe without changing a Result](#observe-without-changing-a-result)
+- [Extract a value](#extract-a-value)
+- [Retry asynchronous operations](#retry-asynchronous-operations)
+- [Work with collections](#work-with-collections)
+- [Validate transport boundaries](#validate-transport-boundaries)
+- [Panic and defects](#panic-and-defects)
+- [API map](#api-map)
+- [Migrate from 2.x](#migrate-from-2x)
+- [Agents and AI](#agents-and-ai)
 
-## Creating Results
+## Mental model
+
+A `Result<T, E>` is either a successful `Ok<T>` or an expected failure `Err<E>`:
 
 ```ts
-// Success
-const ok = Result.ok(42);
-
-// Error
-const err = Result.err(new Error("failed"));
-
-// From throwing function
-const result = Result.try(() => riskyOperation());
-
-// From promise
-const result = await Result.tryPromise(() => fetch(url));
-
-// With custom error handling
-const result = Result.try({
-  try: () => JSON.parse(input),
-  catch: (e) => new ParseError(e),
-});
+type Result<T, E> = Ok<T, E> | Err<T, E>;
 ```
 
-## Transforming Results
+Both variants have a serializable discriminant:
 
 ```ts
-const result = Result.ok(2)
-  .map((x) => x * 2) // Ok(4)
-  .andThen(
-    (
-      x, // Chain Result-returning functions
-    ) => (x > 0 ? Result.ok(x) : Result.err("negative")),
-  );
-
-// Standalone functions (data-first or data-last)
-Result.map(result, (x) => x + 1);
-Result.map((x) => x + 1)(result); // Pipeable
+if (userResult.status === "ok") {
+  renderUser(userResult.value); // User
+} else {
+  reportUserError(userResult.error); // FindUserError
+}
 ```
 
-## Handling Errors
+Static and instance guards are also available:
 
 ```ts
-// Transform error type
-const result = fetchUser(id).mapError((e) => new AppError(`Failed to fetch user: ${e.message}`));
+if (Result.isOk(userResult)) {
+  renderUser(userResult.value);
+}
 
-// Recover from specific errors, widening the success type when needed
-const result = fetchUser(id).tryRecover((e) =>
-  e._tag === "NotFoundError" ? Result.ok(defaultUser) : Result.err(e),
-);
-
-// Async recovery follows the same pattern
-// If fetchUser is async and returns Promise<Result<User, E>>, await it first.
-const result = await (
-  await fetchUser(id)
-).tryRecoverAsync(async (e) =>
-  e._tag === "NetworkError" ? Result.ok(await readUserFromCache(id)) : Result.err(e),
-);
+if (userResult.isErr()) {
+  reportUserError(userResult.error);
+}
 ```
 
-## Observing Results
+Use `Err` when the caller can make a meaningful decision about a failure:
 
-Use `tap` / `tapAsync` for success-side logging or tracing, `tapError` / `tapErrorAsync` for error-side logging or tracing, and `tapBoth` / `tapBothAsync` when you want to observe either branch with one handler object. These methods do not transform the `Result` — they always return the original value unchanged.
+- input is invalid;
+- a record is missing;
+- credentials are rejected;
+- an upstream service is unavailable;
+- data crossing a transport boundary fails validation.
 
-```ts
-const result = Result.try(() => JSON.parse(input))
-  .tap((value) => {
-    console.debug("parsed payload", value);
-  })
-  .tapError((error) => {
-    console.error("failed to parse payload", error);
-  });
-```
+Unexpected callback failures and broken invariants are defects. better-result represents those with `Panic` instead of silently widening a typed error union with `unknown`.
 
-If you want to observe both branches symmetrically with one call, use `tapBoth`:
+A useful Result boundary has a caller that can act on the error. Parsers, repositories, adapters, domain operations, and application workflows are good candidates. Pure, total helpers usually are not.
 
-```ts
-const result = Result.try(() => JSON.parse(input)).tapBoth({
-  ok: (value) => {
-    console.info("decoded payload", value);
-  },
-  err: (error) => {
-    console.warn("decode failed", error);
-  },
-});
-```
+## Build a typed workflow
 
-Async side effects follow the same pattern:
+This checkout workflow shows the normal path: define errors, return Results, compose operations, and handle the complete error union.
+
+### Define errors callers can distinguish
+
+`TaggedError` creates real `Error` subclasses with a literal `_tag` and typed properties:
 
 ```ts
-const result = await Result.err("request failed").tapErrorAsync(async (error) => {
-  await trace("request.failed", { error });
-});
-```
+import { Result, TaggedError, type Result as ResultType } from "better-result";
 
-`tapBothAsync` works the same way for async observers on either branch:
-
-```ts
-const observed = await Result.tapBothAsync(
-  Result.try(() => JSON.parse(input)),
-  {
-    ok: async (value) => {
-      await trace("payload.decoded", { value });
-    },
-    err: async (error) => {
-      await trace("payload.decode_failed", { error });
-    },
-  },
-);
-```
-
-Static helpers support both data-first and data-last styles:
-
-```ts
-const traced = Result.tapError(Result.err("cache miss"), (error) => {
-  console.warn("cache lookup failed", error);
-});
-
-const traceError = Result.tapErrorAsync(async (error: string) => {
-  await trace("cache.lookup_failed", { error });
-});
-
-await traceError(Result.err("cache miss"));
-```
-
-If you prefer, you can still observe both branches by chaining `tap` and `tapError` separately.
-
-Thrown or rejected side-effect callbacks become `Panic`, just like other Result callbacks.
-
-## Extracting Values
-
-```ts
-// Unwrap (throws on Err)
-const value = result.unwrap();
-const value = result.unwrap("custom error message");
-
-// With fallback
-const value = result.unwrapOr(defaultValue);
-
-// Pattern match
-const value = result.match({
-  ok: (v) => v,
-  err: (e) => fallback,
-});
-```
-
-## Generator Composition
-
-Chain multiple Results without nested callbacks or early returns:
-
-```ts
-const result = Result.gen(function* () {
-  const a = yield* parseNumber(inputA); // Unwraps or short-circuits
-  const b = yield* parseNumber(inputB);
-  const c = yield* divide(a, b);
-  return Result.ok(c);
-});
-// Result<number, ParseError | DivisionError>
-```
-
-Async version with `Result.await`:
-
-```ts
-const result = await Result.gen(async function* () {
-  const user = yield* Result.await(fetchUser(id));
-  const posts = yield* Result.await(fetchPosts(user.id));
-  return Result.ok({ user, posts });
-});
-```
-
-Errors from all yielded Results are automatically collected into the final error union type.
-
-### Normalizing Error Types
-
-Use `mapError` on the output of `Result.gen()` to unify multiple error types into a single type:
-
-```ts
-class ParseError extends TaggedError("ParseError")<{ message: string }> {}
-class ValidationError extends TaggedError("ValidationError")<{ message: string }> {}
-class AppError extends TaggedError("AppError")<{ source: string; message: string }> {}
-
-const result = Result.gen(function* () {
-  const parsed = yield* parseInput(input); // Err: ParseError
-  const valid = yield* validate(parsed); // Err: ValidationError
-  return Result.ok(valid);
-}).mapError((e): AppError => new AppError({ source: e._tag, message: e.message }));
-// Result<ValidatedData, AppError> - error union normalized to single type
-```
-
-## Retry Support
-
-```ts
-const result = await Result.tryPromise(() => fetch(url), {
-  retry: {
-    times: 3,
-    delayMs: 100,
-    backoff: "exponential", // or "linear" | "constant"
-  },
-});
-```
-
-The async try callback receives a `TryPromiseContext` with a 1-based `attempt` number and the optional top-level abort signal. The synchronous `Result.try` callback continues to receive a `TryContext` containing only `attempt`.
-
-```ts
-const result = await Result.tryPromise(({ attempt }) => fetchWithRetryContext(url, attempt), {
-  retry: {
-    times: 3,
-    delayMs: 100,
-    backoff: "constant",
-  },
-});
-```
-
-Pass an abort signal in the top-level config to interrupt a pending retry delay and prevent later retries. The signal is also forwarded to every attempt so the try callback can cancel abort-aware operations:
-
-```ts
-const controller = new AbortController();
-
-const result = await Result.tryPromise(({ signal }) => fetch(url, { signal }), {
-  signal: controller.signal,
-  retry: {
-    times: 3,
-    delayMs: 100,
-    backoff: "constant",
-  },
-});
-```
-
-The same signal and failed attempt number are available as the second `shouldRetry` argument for custom retry decisions: `shouldRetry: (error, { attempt, signal }) => boolean`.
-
-`Result.tryPromise` cannot abort an operation by itself. The try callback must pass the signal to operations such as `fetch` that support cancellation. When aborted, retry scheduling stops and the latest typed result is returned.
-
-### Conditional Retry
-
-Retry only for specific error types using `shouldRetry`:
-
-```ts
-class NetworkError extends TaggedError("NetworkError")<{ message: string }> {}
-class ValidationError extends TaggedError("ValidationError")<{ message: string }> {}
-
-const result = await Result.tryPromise(
-  {
-    try: () => fetchData(url),
-    catch: (e) =>
-      e instanceof TypeError // Network failures often throw TypeError
-        ? new NetworkError({ message: (e as Error).message })
-        : new ValidationError({ message: String(e) }),
-  },
-  {
-    retry: {
-      times: 3,
-      delayMs: 100,
-      backoff: "exponential",
-      shouldRetry: (e) => e._tag === "NetworkError", // Only retry network errors
-    },
-  },
-);
-```
-
-### Dynamic Retry Delays
-
-Pass a callback as `delayMs` when each error determines how long to wait. The callback receives the typed error and the context for the failed attempt. `times` remains required so every retry policy has an explicit limit:
-
-```ts
-const result = await Result.tryPromise(
-  {
-    try: () => callApi(url),
-    catch: (cause) => parseApiError(cause),
-  },
-  {
-    retry: {
-      times: 3,
-      shouldRetry: (error) => error.retryable,
-      delayMs: (error, { attempt }) => error.retryAfterMs,
-    },
-  },
-);
-```
-
-A dynamic `delayMs` returns the final delay before the next attempt and cannot be combined with `backoff` or `jitter`. If the callback throws, `Result.tryPromise` throws a `Panic`.
-
-### Async Retry Decisions
-
-Retry callbacks are synchronous. For decisions that require async operations (rate limits, feature flags, etc.), enrich the error in the `catch` handler before making the retry decision:
-
-```ts
-class ApiError extends TaggedError("ApiError")<{
+class CartNotFound extends TaggedError("CartNotFound")<{
+  cartId: string;
   message: string;
-  rateLimited: boolean;
 }> {}
 
-const result = await Result.tryPromise(
-  {
-    try: () => callApi(url),
-    catch: async (e) => {
-      // Fetch async state in catch handler
-      const retryAfter = await redis.get(`ratelimit:${userId}`);
-      return new ApiError({
-        message: (e as Error).message,
-        rateLimited: retryAfter !== null,
-      });
-    },
-  },
-  {
-    retry: {
-      times: 3,
-      delayMs: 100,
-      backoff: "exponential",
-      shouldRetry: (e) => !e.rateLimited, // Sync predicate uses enriched error
-    },
-  },
-);
+class EmptyCart extends TaggedError("EmptyCart")<{
+  cartId: string;
+  message: string;
+}> {}
+
+class OutOfStock extends TaggedError("OutOfStock")<{
+  sku: string;
+  message: string;
+}> {}
+
+class PaymentDeclined extends TaggedError("PaymentDeclined")<{
+  reason: string;
+  message: string;
+}> {}
 ```
 
-### Jitter
-
-To avoid thundering-herd retries when many callers fail at the same time, randomize each delay with `jitter`:
+Tagged errors include normal `Error` behavior, readonly payload properties, `.toJSON()`, a class-level `.is()` guard, exhaustive `.match()`, and generator support.
 
 ```ts
-const result = await Result.tryPromise(() => fetch(url), {
-  retry: {
-    times: 3,
-    delayMs: 100,
-    backoff: "exponential",
-    jitter: true, // full jitter: delay is uniform in [0, baseDelay)
-  },
+const error = new CartNotFound({
+  cartId: "cart_123",
+  message: "Cart cart_123 was not found",
 });
-```
 
-Pass a number from `0` through `1` to control how much of the base delay is randomized:
-
-```ts
-retry: {
-  times: 3,
-  delayMs: 100,
-  backoff: "exponential",
-  jitter: 0.3, // delay uniform in [0.7 * baseDelay, baseDelay)
+if (CartNotFound.is(error)) {
+  console.log(error.cartId);
 }
 ```
 
-`jitter: true` is equivalent to `jitter: 1`. Values outside the inclusive range from `0` to `1`, including `NaN` and infinities, throw a `Panic` before the first attempt.
-
-## UnhandledException
-
-When `Result.try()` or `Result.tryPromise()` catches an exception without a custom handler, the error type is `UnhandledException`:
+### Return Results from fallible operations
 
 ```ts
-import { Result, UnhandledException } from "better-result";
-
-// Automatic — error type is UnhandledException
-const result = Result.try(() => JSON.parse(input));
-//    ^? Result<unknown, UnhandledException>
-
-// Custom handler — you control the error type
-const result = Result.try({
-  try: () => JSON.parse(input),
-  catch: (e) => new ParseError(e),
-});
-//    ^? Result<unknown, ParseError>
-
-// Same for async
-await Result.tryPromise(() => fetch(url));
-//    ^? Promise<Result<Response, UnhandledException>>
-```
-
-Access the original exception via `.cause`:
-
-```ts
-if (Result.isError(result)) {
-  const original = result.error.cause;
-  if (original instanceof SyntaxError) {
-    // Handle JSON parse error
-  }
-}
-```
-
-## Panic
-
-Thrown (not returned) when user callbacks throw inside Result operations. Represents a defect in your code, not a domain error.
-
-```ts
-import { Panic, isPanic } from "better-result";
-
-// Callback throws → Panic
-Result.ok(1).map(() => {
-  throw new Error("bug");
-}); // throws Panic
-
-// Generator cleanup throws → Panic
-Result.gen(function* () {
-  try {
-    yield* Result.err("expected failure");
-  } finally {
-    throw new Error("cleanup bug");
-  }
-}); // throws Panic
-
-// Catch handler throws → Panic
-Result.try({
-  try: () => riskyOp(),
-  catch: () => {
-    throw new Error("bug in handler");
-  },
-}); // throws Panic
-
-// Catching Panic (for error reporting)
-try {
-  result.map(() => {
-    throw new Error("bug");
-  });
-} catch (error) {
-  if (isPanic(error)) {
-    // isPanic() is a type guard function
-    console.error("Defect:", error.message, error.cause);
-  }
-
-  if (Panic.is(error)) {
-    // Panic.is() is a static method (same behavior)
-  }
-
-  if (error instanceof Panic) {
-    // instanceof works too
-  }
-}
-```
-
-**Why Panic?** `Err` is for recoverable domain errors. Panic is for bugs — like Rust's `panic!()`. If your `.map()` callback throws, that's not an error to handle, it's a defect to fix. Returning `Err` would collapse type safety (`Result<T, E>` becomes `Result<T, E | unknown>`).
-
-**Panic properties:**
-
-| Property  | Type      | Description                   |
-| --------- | --------- | ----------------------------- |
-| `message` | `string`  | Describes where/what panicked |
-| `cause`   | `unknown` | The exception that was thrown |
-
-Panic also provides `toJSON()` for error reporting services (Sentry, etc.).
-
-## Tagged Errors
-
-Build exhaustive error handling with discriminated unions:
-
-```ts
-import { Result, TaggedError, matchError, matchErrorPartial } from "better-result";
-
-// Factory API: TaggedError("Tag")<Props>
-class NotFoundError extends TaggedError("NotFoundError")<{
+type Cart = {
   id: string;
-  message: string;
-}> {}
+  items: ReadonlyArray<{ sku: string; quantity: number }>;
+};
 
-class ValidationError extends TaggedError("ValidationError")<{
-  field: string;
-  message: string;
-}> {}
+const carts = new Map<string, Cart>();
 
-type AppError = NotFoundError | ValidationError;
+const findCart = (cartId: string): ResultType<Cart, CartNotFound> => {
+  const cart = carts.get(cartId);
+  return cart === undefined
+    ? Result.err(new CartNotFound({ cartId, message: "Cart not found" }))
+    : Result.ok(cart);
+};
+```
 
-// Create errors with object args
-const err = new NotFoundError({ id: "123", message: "User not found" });
+The error type is part of the function's contract. A caller must propagate, recover from, or handle `CartNotFound`.
 
-// Exhaustive matching with a standalone function
-const describeError = (error: AppError) =>
-  matchError(error, {
-    NotFoundError: (e) => `Missing: ${e.id}`,
-    ValidationError: (e) => `Bad field: ${e.field}`,
+### Compose linearly with `Result.gen`
+
+Assume the application also provides these Result-returning operations:
+
+```ts
+reserveStock(cart.items); // Result<StockReservation, OutOfStock>
+chargePayment(cart, reservation); // Result<Receipt, PaymentDeclined>
+```
+
+`Result.gen` composes them without nested callbacks or manual early returns:
+
+```ts
+const checkout = (cartId: string) =>
+  Result.gen(function* () {
+    const cart = yield* findCart(cartId);
+
+    if (cart.items.length === 0) {
+      yield* new EmptyCart({ cartId, message: "Cannot check out an empty cart" });
+    }
+
+    const reservation = yield* reserveStock(cart.items);
+    const receipt = yield* chargePayment(cart, reservation);
+
+    return Result.ok(receipt);
   });
+// Result<Receipt, CartNotFound | EmptyCart | OutOfStock | PaymentDeclined>
+```
 
-// TaggedError instances can match directly
-const describeErrorDirectly = (error: AppError) =>
-  error.match({
-    NotFoundError: (e) => `Missing: ${e.id}`,
-    ValidationError: (e) => `Bad field: ${e.field}`,
-  });
+Every `Ok` is unwrapped. The first `Err` short-circuits the generator. Errors from all yielded Results are collected into the final union.
 
-// If a selected handler throws, match and matchError throw Panic with that exception as cause.
-// `match` is reserved and cannot be declared as a TaggedError payload property.
+A tagged error can be yielded directly for a guard clause. This is equivalent to `yield* Result.err(new EmptyCart(...))`; it returns an `Err` and does not throw.
 
-// Result error handlers infer the union, so no annotation is needed
-const response = result.match({
-  ok: (user) => ({ status: 200, body: user }),
+### Handle the complete error union
+
+Use `Result.match` to handle success versus failure, then match the tagged error union:
+
+```ts
+const response = checkout(cartId).match({
+  ok: (receipt) => Response.json(receipt, { status: 201 }),
   err: (error) =>
     error.match({
-      NotFoundError: () => ({ status: 404, body: null }),
-      ValidationError: () => ({ status: 400, body: null }),
+      CartNotFound: () => Response.json({ message: "Cart not found" }, { status: 404 }),
+      EmptyCart: () => Response.json({ message: "Cart is empty" }, { status: 400 }),
+      OutOfStock: (error) =>
+        Response.json({ message: `Out of stock: ${error.sku}` }, { status: 409 }),
+      PaymentDeclined: () => Response.json({ message: "Payment declined" }, { status: 402 }),
     }),
 });
-
-// Partial matching leaves unhandled errors unchanged by default
-const transformed = matchErrorPartial(error, {
-  NotFoundError: (e) => `Missing: ${e.id}`,
-});
-// string | ValidationError
-
-// In data-last form, annotate handlers that use variant-specific fields
-const transformError = matchErrorPartial({
-  NotFoundError: (e: NotFoundError) => `Missing: ${e.id}`,
-});
-const piped = transformError(error);
-// string | ValidationError
-
-// A custom onUnhandled callback can transform unhandled errors
-const message = matchErrorPartial(
-  error,
-  { NotFoundError: (e) => `Missing: ${e.id}` },
-  (e) => `Unknown: ${e.message}`,
-);
-
-// Result.err preserves unhandled variants when composing with tryRecover
-const recovered = result.tryRecover(
-  matchErrorPartial({ NotFoundError: (e: NotFoundError) => Result.ok(defaultValue) }, Result.err),
-);
-
-// Type guards
-TaggedError.is(value); // any TaggedError instance, including toJSON()
-NotFoundError.is(value); // specific class
 ```
 
-### Yielding Tagged Errors in `Result.gen`
+Adding another tagged error to `checkout` makes this exhaustive handler fail to type-check until the new policy is defined.
 
-Tagged errors can short-circuit `Result.gen` directly. This is useful for recoverable domain errors and is equivalent to yielding `Result.err(error)`; it does not throw.
+Use [`matchError`](https://better-result.dev/errors/matching-errors) when errors are structurally tagged or when data-last composition is more convenient. Use `matchErrorPartial` when selected variants should be transformed and unhandled variants should pass through.
+
+## Compose asynchronous workflows
+
+Prefer `Result.gen` with `Result.await` for multi-step asynchronous workflows. It keeps intermediate values local, short-circuits on the first `Err`, and preserves every yielded error type:
 
 ```ts
-const result = Result.gen(function* () {
-  yield* new NotFoundError({ id: "123", message: "missing" });
-  return Result.ok("never reached");
+const dashboard = await Result.gen(async function* () {
+  const session = yield* Result.await(readSession());
+  const user = yield* Result.await(fetchUser(session.userId));
+  const posts = yield* Result.await(fetchPosts(user.id));
+
+  return Result.ok({ user, posts });
 });
-// Result<string, NotFoundError>
-// => Err(original NotFoundError instance)
+// Result<Dashboard, SessionExpired | UserNotFound | FetchPostsFailed>
 ```
 
-They also compose with regular `Result` values and contribute to the inferred error union:
+`Result.await` provides the async iterator protocol needed by the generator while preserving the Promise's Result types.
+
+For a short pipeline, chain the Promise with static, data-last combinators from the `Result` namespace:
 
 ```ts
-const result = Result.gen(function* () {
-  const user = yield* findUser("123"); // Result<User, NotFoundError>
-
-  if (!user.active) {
-    yield* new ValidationError({ field: "active", message: "User is inactive" });
-  }
-
-  return Result.ok(user);
-});
-// Result<User, NotFoundError | ValidationError>
+const postCount = await fetchUser(userId)
+  .then(Result.andThenAsync((user: User) => fetchPosts(user.id)))
+  .then(Result.map((posts: ReadonlyArray<Post>) => posts.length));
+// Result<number, UserNotFound | FetchPostsFailed>
 ```
 
-For errors with computed messages, add a custom constructor:
+`Promise.then` unwraps each outer Promise. `Result.andThenAsync` runs `fetchPosts` only for `Ok`, and `Result.map` transforms the eventual success while both errors remain visible.
+
+Use this order of preference for asynchronous Result code:
+
+1. `Result.gen` with `Result.await` for workflows with several steps or intermediate values;
+2. `.then(Result.andThenAsync(...))` and other static combinators for short Promise pipelines;
+3. await a `Promise<Result>` first only when ordinary control-flow narrowing is clearer than composition.
+
+`Result.gen` closes a short-circuited generator, so `finally`, `Symbol.dispose`, and `Symbol.asyncDispose` cleanup can run. See [Generator composition](https://better-result.dev/core/generator-composition) for cleanup and defect behavior.
+
+## Transform and compose Results
+
+Use each operation on the branch it owns:
+
+| Operation          | Runs on         | Purpose                                          |
+| ------------------ | --------------- | ------------------------------------------------ |
+| `map`              | `Ok`            | Transform a success value                        |
+| `mapError`         | `Err`           | Translate an error value                         |
+| `andThen`          | `Ok`            | Continue with another Result-returning operation |
+| `tryRecover`       | `Err`           | Recover from or replace an error                 |
+| `tap` / `tapError` | Selected branch | Observe without changing the Result              |
+| `match`            | Both            | Leave the Result abstraction with one output     |
+
+For example, a profile workflow can keep its errors visible while changing the success value:
+
+```ts
+const displayName = findUser(userId)
+  .map((user) => user.profile)
+  .andThen(validateUserProfile)
+  .map((profile) => profile.displayName)
+  .mapError((cause) => new LoadProfileFailed({ cause, message: "Could not load user profile" }));
+// Result<string, LoadProfileFailed>
+```
+
+`andThen` unions errors when the next operation introduces another failure type:
+
+```ts
+const greeting = findUser(userId).andThen((user) => loadGreeting(user.locale));
+// Result<Greeting, UserNotFound | GreetingLoadFailed>
+```
+
+Combinators are available as instance methods and as static data-first or data-last functions:
+
+```ts
+const upperName = Result.map(userResult, (user) => user.name.toUpperCase());
+
+const getUpperName = Result.map((user: User) => user.name.toUpperCase());
+const pipedName = getUpperName(userResult);
+```
+
+See [Transforming and chaining](https://better-result.dev/core/transforming-and-chaining) for the complete sync and async contracts.
+
+## Recover from errors
+
+Recovery is different from error transformation: the callback returns another Result and may produce a usable success value.
+
+A cache fallback can recover from a network failure while preserving all other variants:
+
+```ts
+const user = await fetchUser(userId).then(
+  Result.tryRecoverAsync(async (error: FetchUserError) =>
+    error._tag === "NetworkUnavailable" ? await readCachedUser(userId) : Result.err(error),
+  ),
+);
+// Result<User, UserNotFound | CacheMiss>
+```
+
+Recovery may widen the success type when the fallback returns a different value:
+
+```ts
+const userOrGuest = findUser(userId).tryRecover((error) =>
+  UserNotFound.is(error) ? Result.ok(guestUser) : Result.err(error),
+);
+// Result<User | GuestUser, DatabaseUnavailable>
+```
+
+Use `tryRecoverAsync` when recovery itself is asynchronous.
+
+## Observe without changing a Result
+
+Observation methods are useful for logging, metrics, and tracing. They always preserve the original Result.
+
+```ts
+const tracedUser = await fetchUser(userId).then(
+  Result.tapBothAsync({
+    ok: (user: User) => trace("user.loaded", { userId: user.id }),
+    err: (error: FetchUserError) => trace("user.load_failed", { tag: error._tag }),
+  }),
+);
+```
+
+The complete family is:
+
+- `tap` and `tapAsync` observe `Ok`;
+- `tapError` and `tapErrorAsync` observe `Err`;
+- `tapBoth` and `tapBothAsync` select an observer for either branch.
+
+```ts
+const result = parseConfiguration(input)
+  .tap((configuration) => console.info("Configuration loaded", configuration))
+  .tapError((error) => console.error("Configuration rejected", error));
+```
+
+A throwing or rejected observer is a defect and becomes `Panic`.
+
+## Extract a value
+
+Prefer `match` when both branches require explicit policy:
+
+```ts
+const response = userResult.match({
+  ok: (user) => Response.json(user, { status: 200 }),
+  err: (error) => toUserErrorResponse(error),
+});
+```
+
+Use `unwrapOr` when a fallback is the complete error policy:
+
+```ts
+const port = parsePort(process.env.PORT ?? "").unwrapOr(3000);
+```
+
+Static data-first and data-last forms are also available:
+
+```ts
+Result.unwrapOr(parsePort(input), 3000);
+Result.unwrapOr(3000)(parsePort(input));
+```
+
+Use `unwrap` only to assert that `Err` would prove a broken invariant:
+
+```ts
+const configuration = loadStartupConfiguration().unwrap("Startup configuration must be valid");
+```
+
+On `Err`, `unwrap` throws `Panic` and preserves the error value as its cause. It is not a substitute for handling routine failures.
+
+See [Extracting values](https://better-result.dev/core/extracting-values) for the full contract.
+
+## Retry asynchronous operations
+
+`Result.tryPromise` captures Promise rejection. The object form translates unknown rejection values into a typed error:
 
 ```ts
 class NetworkError extends TaggedError("NetworkError")<{
+  cause: unknown;
   url: string;
-  status: number;
+  retryable: boolean;
   message: string;
-}> {
-  constructor(args: { url: string; status: number }) {
-    super({ ...args, message: `Request to ${args.url} failed: ${args.status}` });
-  }
-}
+}> {}
 
-new NetworkError({ url: "/api", status: 404 });
+const controller = new AbortController();
+
+const responseResultPromise = Result.tryPromise(
+  {
+    try: ({ signal }) => fetch(url, { signal }),
+    catch: (cause) =>
+      new NetworkError({
+        cause,
+        url,
+        retryable: cause instanceof TypeError,
+        message: "Network request failed",
+      }),
+  },
+  {
+    signal: controller.signal,
+    retry: {
+      times: 3,
+      delayMs: 100,
+      backoff: "exponential",
+      jitter: true,
+      shouldRetry: (error) => error.retryable,
+    },
+  },
+);
 ```
 
-## Serialization
+`times` is the maximum number of retries after the initial attempt. Retry scheduling is bounded, and the top-level signal interrupts pending delays.
 
-Build Result-level codecs for RPC, storage, or server actions with Standard Schema-compatible schemas. This example uses Zod, but any Standard Schema implementation works:
+`Result.tryPromise` cannot cancel an operation by itself. Forward its signal to cancellation-aware operations, as the example does with `fetch`.
+
+A fulfilled HTTP error response does not reject. Handle HTTP status explicitly:
 
 ```ts
-import { z } from "zod";
-import {
-  Result,
-  ResultDeserializationError,
-  ResultSerializationError,
-  type Result as ResultType,
-  type SerializedResult,
-} from "better-result";
+class HttpResponseError extends TaggedError("HttpResponseError")<{
+  status: number;
+  url: string;
+  message: string;
+}> {}
 
-const UserSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  createdAt: z.date(),
-});
-const UserWireSchema = z.object({
-  id: z.string(),
-  display_name: z.string(),
-  created_at_iso: z.string(),
-});
-const ValidationErrorSchema = z.object({
-  code: z.string(),
-  message: z.string(),
-});
-const ValidationErrorWireSchema = z.object({
-  type: z.string(),
-  message: z.string(),
-});
-type UserWire = z.output<typeof UserWireSchema>;
-type ValidationErrorWire = z.output<typeof ValidationErrorWireSchema>;
+const successfulResponse = await responseResultPromise.then(
+  Result.andThen((response: Response) =>
+    response.ok
+      ? Result.ok(response)
+      : Result.err(
+          new HttpResponseError({
+            status: response.status,
+            url: response.url,
+            message: `Request failed with status ${response.status}`,
+          }),
+        ),
+  ),
+);
+// Result<Response, NetworkError | HttpResponseError>
+```
+
+Retry policies also support attempt context, constant and linear backoff, dynamic error-dependent delays, and configurable jitter. See [Async operations and retries](https://better-result.dev/core/async-and-retries) for exact semantics.
+
+## Work with collections
+
+Use `Result.all` when every operation must succeed:
+
+```ts
+const accountContext = Result.all([
+  loadCachedUser(userId),
+  loadCachedTeam(teamId),
+  loadCachedPlan(accountId),
+] as const);
+// Result<[User, Team, Plan], UserLoadError | TeamLoadError | PlanLoadError>
+```
+
+`Result.allAsync` awaits inputs concurrently, then returns all successes or the first input-order error:
+
+```ts
+const accountContext = await Result.allAsync([
+  fetchUser(userId),
+  fetchTeam(teamId),
+  fetchPlan(accountId),
+] as const);
+```
+
+Use `Result.partition` when every item should be processed:
+
+```ts
+const validationResults = importRows.map(validateImportRow);
+const [validRows, invalidRowErrors] = Result.partition(validationResults);
+```
+
+`partition` preserves the relative order of every success and error instead of short-circuiting. `partitionAsync` provides the concurrent asynchronous form.
+
+Use `Result.flatten` when a nested Result already exists:
+
+```ts
+const flattened = Result.flatten(nestedUserResult);
+// Result<User, ParseUserError | LoadUserError>
+```
+
+See [Collections](https://better-result.dev/core/collections) for tuple inference, ordering, and rejected-Promise behavior.
+
+## Validate transport boundaries
+
+`Result.codec` validates and transforms Result values crossing RPC, persistence, queue, or server-action boundaries. It accepts any [Standard Schema](https://standardschema.dev/)-compatible schema library.
+
+Pass four named, boundary-owned schemas to the codec. Keep validation and domain/wire mapping inside those schemas rather than defining it inline in `Result.codec`:
+
+```ts
+import { Result, ResultDeserializationError, ResultSerializationError } from "better-result";
 
 const UserResultCodec = Result.codec({
   serialize: {
-    ok: UserSchema.transform((user) => ({
-      id: user.id,
-      display_name: user.name,
-      created_at_iso: user.createdAt.toISOString(),
-    })),
-    err: ValidationErrorSchema.transform((error) => ({
-      type: error.code,
-      message: error.message,
-    })),
+    ok: UserToWireSchema,
+    err: DomainErrorToWireSchema,
   },
   deserialize: {
-    ok: UserWireSchema.transform((wire) => ({
-      id: wire.id,
-      name: wire.display_name,
-      createdAt: new Date(wire.created_at_iso),
-    })),
-    err: ValidationErrorWireSchema.transform((wire) => ({
-      code: wire.type,
-      message: wire.message,
-    })),
+    ok: UserFromWireSchema,
+    err: DomainErrorFromWireSchema,
   },
 });
+```
 
-const outbound = await UserResultCodec.serialize(Result.ok(user));
-// Ok({ status: "ok", value: { id, display_name, created_at_iso } })
+Serialize a Result into a validated plain-object envelope:
 
-if (Result.isError(outbound) && ResultSerializationError.is(outbound.error)) {
-  console.log("Bad payload:", outbound.error.value, outbound.error.issues);
+```ts
+const encoded = await UserResultCodec.serialize(Result.ok(user));
+// Result<SerializedResult<UserWire, ErrorWire>, ResultSerializationError>
+
+if (Result.isError(encoded) && ResultSerializationError.is(encoded.error)) {
+  console.error("Could not serialize user Result", encoded.error.issues);
 }
+```
 
-const inbound = await outbound.andThenAsync(async (wire) => {
-  return await UserResultCodec.deserialize(wire);
+Deserialize untrusted input back into validated domain values:
+
+```ts
+const decoded = await UserResultCodec.deserialize(inputFromNetwork);
+// Result<User, DomainError | ResultDeserializationError>
+
+if (Result.isError(decoded) && ResultDeserializationError.is(decoded.error)) {
+  console.error("Invalid serialized Result", decoded.error.issues);
+}
+```
+
+The codec validates the outer `{ status, value | error }` envelope and the selected payload. In-memory and wire types can differ in both directions. A schema issue returns `ResultSerializationError` or `ResultDeserializationError`; a schema that throws or rejects is a defect and produces `Panic`.
+
+See [Result codecs](https://better-result.dev/serialization/result-codecs) for mixed synchronous/asynchronous schemas and exact return-type inference.
+
+## Panic and defects
+
+`Err` represents an expected failure in the function's contract. `Panic` represents a defect that ordinary callers should not recover from.
+
+If a user callback unexpectedly throws, better-result throws `Panic` rather than adding `unknown` to the Result's error type:
+
+```ts
+Result.ok(user).map(() => {
+  throw new Error("Broken user invariant");
 });
-// Ok(user)
+// throws Panic
+```
 
-const invalid = await UserResultCodec.deserialize({ foo: "bar" });
-if (Result.isError(invalid) && ResultDeserializationError.is(invalid.error)) {
-  console.log("Bad envelope or payload:", invalid.error.value, invalid.error.issues);
+This protection applies to transforms, chaining, matching, recovery, observers, generators, custom catch handlers, and codec validation.
+
+Catch `Panic` at reporting or supervision boundaries:
+
+```ts
+import { Panic } from "better-result";
+
+try {
+  runApplication();
+} catch (error) {
+  if (Panic.is(error)) {
+    reportDefect(error.message, error.cause);
+  }
 }
-
-async function createUser(
-  data: FormData,
-): Promise<ResultType<SerializedResult<UserWire, ValidationErrorWire>, ResultSerializationError>> {
-  const result = await validateAndCreate(data);
-  return UserResultCodec.serialize(result);
-}
 ```
 
-### Synchronous and asynchronous schemas
+`isPanic(error)` and `error instanceof Panic` are also supported. `Panic.cause` preserves the original thrown value.
 
-Serialization and deserialization infer their return types independently. Within either direction, the selected `ok` or `err` schema determines whether a concrete branch returns a `Result` or a `Promise<Result>`—no runtime mode configuration is needed.
+See [Panic and defects](https://better-result.dev/errors/panic-and-defects) for callback boundaries, generator cleanup, and reporting behavior.
+
+## API map
+
+The [complete API reference](https://better-result.dev/reference/result) is the source of truth for signatures and overloads.
+
+| Intent                 | APIs                                                                                                        |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Create                 | `Result.ok`, `Result.err`, `Result.try`, `Result.tryPromise`                                                |
+| Narrow and handle      | `Result.isOk`, `Result.isError`, `match`, `unwrapOr`, `unwrap`                                              |
+| Transform and compose  | `map`, `mapError`, `andThen`, `andThenAsync`, `tryRecover`, `tryRecoverAsync`, `Result.gen`, `Result.await` |
+| Observe                | `tap`, `tapAsync`, `tapError`, `tapErrorAsync`, `tapBoth`, `tapBothAsync`                                   |
+| Collect                | `Result.all`, `Result.allAsync`, `Result.partition`, `Result.partitionAsync`, `Result.flatten`              |
+| Typed errors           | `TaggedError`, `matchError`, `matchErrorPartial`, `isTaggedError`                                           |
+| Boundaries and defects | `Result.codec`, `Panic`, `panic`, `isPanic`, `UnhandledException`                                           |
+
+### Public types
+
+| Type                                | Purpose                                       |
+| ----------------------------------- | --------------------------------------------- |
+| `Result<T, E>`                      | Union of `Ok<T, E>` and `Err<T, E>`           |
+| `InferOk<R>`                        | Extract the success type from a Result        |
+| `InferErr<R>`                       | Extract the error type from a Result          |
+| `TryContext`                        | Synchronous attempt context                   |
+| `TryPromiseContext`                 | Asynchronous attempt and abort-signal context |
+| `ResultCodec` / `ResultCodecConfig` | Result codec contracts                        |
+| `SerializedResult<T, E>`            | Plain-object Result envelope                  |
+| `StandardSchemaV1`                  | Standard Schema-compatible validator contract |
+| `AnyTaggedError`                    | Any better-result tagged error instance       |
+
+See [Ok and Err](https://better-result.dev/reference/ok-and-err), [exported types](https://better-result.dev/reference/exported-types), and [error APIs](https://better-result.dev/reference/errors) for detailed contracts.
+
+## Migrate from 2.x
+
+Read the full [2.x to 3.0 migration guide](https://better-result.dev/migration/from-2) before upgrading.
+
+The most important breaking changes are:
+
+1. `TaggedError("Tag")<Props>` no longer has a trailing factory call.
+2. `Result.serialize`, `Result.deserialize`, and `Result.hydrate` were replaced by schema-backed `Result.codec` boundaries.
+3. `match` is reserved on `TaggedError` instances.
 
 ```ts
-const serializedOk = MixedCodec.serialize(Result.ok(user)); // Result when serialize.ok is sync
-const serializedErr = MixedCodec.serialize(Result.err(error)); // Promise<Result> when serialize.err is async
+// 2.x
+class UserNotFound extends TaggedError("UserNotFound")<{ userId: string; message: string }>() {}
 
-const deserializedOk = MixedCodec.deserialize({ status: "ok", value: userWire });
-const deserializedErr = MixedCodec.deserialize({ status: "error", error: errorWire });
-```
-
-When the input's branch is not statically known, mixed schemas honestly return `Result | Promise<Result>`. An `unknown` deserialization input also includes the synchronous `Result` case because an invalid outer envelope fails before a payload schema runs. `await` accepts both forms when callers want one control flow:
-
-```ts
-const decoded = await MixedCodec.deserialize(inputFromNetwork);
-```
-
-Schema validation issues are returned as `ResultSerializationError` or `ResultDeserializationError`. A schema that throws or returns a rejected Promise is a defect: the codec throws or rejects with `Panic` and preserves the original error as `cause`.
-
-JSON transports omit object properties whose value is `undefined`. The codec therefore accepts `{ status: "ok" }` and `{ status: "error" }` as envelopes and passes the missing payload to the selected deserialization schema as `undefined`. A `void` or `undefined` schema can accept it; schemas requiring another payload return `ResultDeserializationError` with their validation issues.
-
-### Migrating from `Result.serialize` / `Result.deserialize`
-
-`Result.serialize`, `Result.deserialize`, and `Result.hydrate` were removed in 3.0. The old helpers copied payloads without validating them:
-
-```ts
-// Before 3.0
-const wire = Result.serialize(result); // SerializedResult<User, ValidationError>
-const resultOrNull = Result.deserialize<User, ValidationError>(input); // Result | null
-```
-
-Create a codec once and let its schemas infer the payload types. For already serializable payloads, use the same validating schemas in both directions:
-
-```ts
 // 3.0
-const UserResultCodec = Result.codec({
-  serialize: { ok: UserToWireSchema, err: ValidationToErrorWireSchema },
-  deserialize: { ok: UserFromWireSchema, err: ValidationFromErrorWireSchema },
-});
-
-const wirePayloadResult = Result.ok(userWire);
-const wireResult = await UserResultCodec.serialize(wirePayloadResult);
-// Result<SerializedResult<UserWire, ValidationErrorWire>, ResultSerializationError>
-
-const decoded = await UserResultCodec.deserialize(input);
-// Result<UserWire, ValidationErrorWire | ResultDeserializationError>
+class UserNotFound extends TaggedError("UserNotFound")<{ userId: string; message: string }> {}
 ```
 
-Migration differences:
+3.0 also adds widening recovery, direct tagged-error matching, collection helpers, cancellation-aware retries, dynamic retry delays, and richer observation APIs.
 
-- Handle `ResultSerializationError` instead of assuming serialization always succeeds.
-- Handle `ResultDeserializationError` instead of checking for `null`; its `issues` preserve schema diagnostics when a payload is invalid.
-- Remove explicit `<User, ValidationError>` deserialization type arguments. The schemas provide those types.
-- Use `await` when a schema is async or when a schema library exposes a sync-or-async Standard Schema validator type.
+## Agents and AI
 
-## API Reference
-
-### Result
-
-| Method                                  | Description                                                                           |
-| --------------------------------------- | ------------------------------------------------------------------------------------- |
-| `Result.ok(value)`                      | Create success                                                                        |
-| `Result.err(error)`                     | Create error                                                                          |
-| `Result.try(fn)`                        | Wrap throwing function                                                                |
-| `Result.tryPromise(fn, config?)`        | Wrap async function with optional retry                                               |
-| `Result.isOk(result)`                   | Type guard for Ok                                                                     |
-| `Result.isError(result)`                | Type guard for Err                                                                    |
-| `Result.gen(fn)`                        | Generator composition                                                                 |
-| `Result.tryRecover(result, fn)`         | Recover error, widening the success type when needed                                  |
-| `Result.tryRecoverAsync(result, fn)`    | Async recover error, widening the success type when needed                            |
-| `Result.tap(result, fn)`                | Run side effect on success and return original result                                 |
-| `Result.tapAsync(result, fn)`           | Run async side effect on success and return original result                           |
-| `Result.tapError(result, fn)`           | Run side effect on error and return original result                                   |
-| `Result.tapErrorAsync(result, fn)`      | Run async side effect on error and return original result                             |
-| `Result.tapBoth(result, handlers)`      | Run side effect on either branch and return original result                           |
-| `Result.tapBothAsync(result, handlers)` | Run async side effect on either branch and return original result                     |
-| `Result.await(promise)`                 | Wrap Promise<Result> for generators                                                   |
-| `Result.codec(config)`                  | Build a Result-level codec from Standard Schema-compatible serializers/deserializers  |
-| `Result.all(results)`                   | Collect success values or return the first error, preserving tuple types              |
-| `Result.allAsync(results)`              | Concurrently await Results, then collect values or return the first input-order error |
-| `Result.partition(results)`             | Split Results into success and error arrays, preserving heterogeneous unions          |
-| `Result.partitionAsync(results)`        | Concurrently await Results, then split successes and errors into ordered arrays       |
-| `Result.flatten(result)`                | Flatten nested Result                                                                 |
-
-### Instance Methods
-
-| Method                    | Description                                       |
-| ------------------------- | ------------------------------------------------- |
-| `.isOk()`                 | Type guard, narrows to Ok                         |
-| `.isErr()`                | Type guard, narrows to Err                        |
-| `.map(fn)`                | Transform success value                           |
-| `.mapError(fn)`           | Transform error value                             |
-| `.tryRecover(fn)`         | Recover error and widen success when needed       |
-| `.tryRecoverAsync(fn)`    | Async recover error and widen success when needed |
-| `.andThen(fn)`            | Chain Result-returning function                   |
-| `.andThenAsync(fn)`       | Chain async Result-returning function             |
-| `.match({ ok, err })`     | Pattern match                                     |
-| `.unwrap(message?)`       | Extract value or throw                            |
-| `.unwrapOr(fallback)`     | Extract value or return fallback                  |
-| `.tap(fn)`                | Side effect on success                            |
-| `.tapAsync(fn)`           | Async side effect on success                      |
-| `.tapError(fn)`           | Side effect on error                              |
-| `.tapErrorAsync(fn)`      | Async side effect on error                        |
-| `.tapBoth(handlers)`      | Side effect on either branch                      |
-| `.tapBothAsync(handlers)` | Async side effect on either branch                |
-
-### TaggedError
-
-| Method                                             | Description                                             |
-| -------------------------------------------------- | ------------------------------------------------------- |
-| `TaggedError(tag)<Props>`                          | Factory for tagged error class                          |
-| `TaggedError.is(value)`                            | Type guard for any TaggedError                          |
-| `error.match(handlers)`                            | Exhaustive instance pattern match by `_tag`             |
-| `matchError(err, handlers)`                        | Exhaustive standalone pattern match by `_tag`           |
-| `matchErrorPartial(error, handlers, onUnhandled?)` | Partial match; unhandled errors pass through by default |
-| `isTaggedError(value)`                             | Type guard (standalone function)                        |
-| `panic(message, cause?)`                           | Throw unrecoverable Panic                               |
-| `isPanic(value)`                                   | Type guard for Panic                                    |
-
-### Type Helpers
-
-| Type                     | Description                  |
-| ------------------------ | ---------------------------- |
-| `InferOk<R>`             | Extract Ok type from Result  |
-| `InferErr<R>`            | Extract Err type from Result |
-| `AnyTaggedError`         | Generic TaggedError instance |
-| `SerializedResult<T, E>` | Plain object form of Result  |
-| `SerializedOk<T>`        | Plain object form of Ok      |
-| `SerializedErr<E>`       | Plain object form of Err     |
-
-## Agents & AI
-
-The portable [`adopt-better-result`](skills/adopt-better-result/SKILL.md) skill guides compatible coding agents through either a repository-wide error-handling audit or one named vertical migration slice.
+The portable [`adopt-better-result`](skills/adopt-better-result/SKILL.md) skill guides compatible coding agents through a repository-wide error-handling audit or one approved vertical migration slice.
 
 Install it with skills.sh-compatible tooling:
 
@@ -840,8 +639,17 @@ Install it with skills.sh-compatible tooling:
 npx skills add dmmulroy/better-result@adopt-better-result
 ```
 
-See [`skills/README.md`](skills/README.md) for manual installation and usage details.
+See [`skills/README.md`](skills/README.md) for manual installation and usage.
+
+## Documentation
+
+- [Documentation home](https://better-result.dev)
+- [Mental model](https://better-result.dev/getting-started/mental-model)
+- [Application patterns](https://better-result.dev/guides/application-patterns)
+- [Testing Results](https://better-result.dev/guides/testing)
+- [API reference](https://better-result.dev/reference/result)
+- [Issue tracker](https://github.com/dmmulroy/better-result/issues)
 
 ## License
 
-MIT
+[MIT](LICENSE)
