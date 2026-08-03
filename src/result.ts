@@ -348,46 +348,46 @@ const match: {
 });
 
 const tap: {
-  <A, E>(result: Result<A, E>, fn: (a: A) => void): Result<A, E>;
-  <A>(fn: (a: A) => void): <E>(result: Result<A, E>) => Result<A, E>;
-} = dual(2, <A, E>(result: Result<A, E>, fn: (a: A) => void): Result<A, E> => {
+  <A, E>(result: Result<A, E>, fn: (a: NoInfer<A>) => void): Result<A, E>;
+  <A>(fn: (a: NoInfer<A>) => void): <E>(result: Result<A, E>) => Result<A, E>;
+} = dual(2, <A, E>(result: Result<A, E>, fn: (a: NoInfer<A>) => void): Result<A, E> => {
   return result.tap(fn);
 });
 
 const tapAsync: {
-  <A, E>(result: Result<A, E>, fn: (a: A) => Promise<void>): Promise<Result<A, E>>;
-  <A>(fn: (a: A) => Promise<void>): <E>(result: Result<A, E>) => Promise<Result<A, E>>;
-} = dual(2, <A, E>(result: Result<A, E>, fn: (a: A) => Promise<void>): Promise<Result<A, E>> => {
+  <A, E>(result: Result<A, E>, fn: (a: NoInfer<A>) => Promise<void>): Promise<Result<A, E>>;
+  <A>(fn: (a: NoInfer<A>) => Promise<void>): <E>(result: Result<A, E>) => Promise<Result<A, E>>;
+} = dual(2, <A, E>(result: Result<A, E>, fn: (a: NoInfer<A>) => Promise<void>): Promise<Result<A, E>> => {
   return result.tapAsync(fn);
 });
 
 const tapError: {
-  <A, E>(result: Result<A, E>, fn: (e: E) => void): Result<A, E>;
-  <E>(fn: (e: E) => void): <A>(result: Result<A, E>) => Result<A, E>;
-} = dual(2, <A, E>(result: Result<A, E>, fn: (e: E) => void): Result<A, E> => {
+  <A, E>(result: Result<A, E>, fn: (e: NoInfer<E>) => void): Result<A, E>;
+  <E>(fn: (e: NoInfer<E>) => void): <A>(result: Result<A, E>) => Result<A, E>;
+} = dual(2, <A, E>(result: Result<A, E>, fn: (e: NoInfer<E>) => void): Result<A, E> => {
   return result.tapError(fn);
 });
 
 const tapErrorAsync: {
-  <A, E>(result: Result<A, E>, fn: (e: E) => Promise<void>): Promise<Result<A, E>>;
-  <E>(fn: (e: E) => Promise<void>): <A>(result: Result<A, E>) => Promise<Result<A, E>>;
-} = dual(2, <A, E>(result: Result<A, E>, fn: (e: E) => Promise<void>): Promise<Result<A, E>> => {
+  <A, E>(result: Result<A, E>, fn: (e: NoInfer<E>) => Promise<void>): Promise<Result<A, E>>;
+  <E>(fn: (e: NoInfer<E>) => Promise<void>): <A>(result: Result<A, E>) => Promise<Result<A, E>>;
+} = dual(2, <A, E>(result: Result<A, E>, fn: (e: NoInfer<E>) => Promise<void>): Promise<Result<A, E>> => {
   return result.tapErrorAsync(fn);
 });
 
 const tapBoth: {
-  <A, E>(handlers: TapBothHandlers<A, E>): (result: Result<A, E>) => Result<A, E>;
-  <A, E>(result: Result<A, E>, handlers: TapBothHandlers<A, E>): Result<A, E>;
-} = dual(2, <A, E>(result: Result<A, E>, handlers: TapBothHandlers<A, E>): Result<A, E> => {
+  <A, E>(handlers: TapBothHandlers<NoInfer<A>, NoInfer<E>>): (result: Result<A, E>) => Result<A, E>;
+  <A, E>(result: Result<A, E>, handlers: TapBothHandlers<NoInfer<A>, NoInfer<E>>): Result<A, E>;
+} = dual(2, <A, E>(result: Result<A, E>, handlers: TapBothHandlers<NoInfer<A>, NoInfer<E>>): Result<A, E> => {
   return result.tapBoth(handlers);
 });
 
 const tapBothAsync: {
-  <A, E>(handlers: TapBothAsyncHandlers<A, E>): (result: Result<A, E>) => Promise<Result<A, E>>;
-  <A, E>(result: Result<A, E>, handlers: TapBothAsyncHandlers<A, E>): Promise<Result<A, E>>;
+  <A, E>(handlers: TapBothAsyncHandlers<NoInfer<A>, NoInfer<E>>): (result: Result<A, E>) => Promise<Result<A, E>>;
+  <A, E>(result: Result<A, E>, handlers: TapBothAsyncHandlers<NoInfer<A>, NoInfer<E>>): Promise<Result<A, E>>;
 } = dual(
   2,
-  <A, E>(result: Result<A, E>, handlers: TapBothAsyncHandlers<A, E>): Promise<Result<A, E>> => {
+  <A, E>(result: Result<A, E>, handlers: TapBothAsyncHandlers<NoInfer<A>, NoInfer<E>>): Promise<Result<A, E>> => {
     return result.tapBothAsync(handlers);
   },
 );
