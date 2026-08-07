@@ -10,6 +10,7 @@ import {
   ok,
   panic,
   type AnyResult,
+  type CallbackError,
   type InferErr,
   type InferOk,
   type TapBothAsyncHandlers,
@@ -17,7 +18,7 @@ import {
 } from "./core";
 
 export { Err, Ok } from "./core";
-export type { InferErr, InferOk } from "./core";
+export type { CallbackError, InferErr, InferOk } from "./core";
 export type { StandardSchemaV1 } from "./standard-schema";
 export type Result<T, E> = import("./core").Result<T, E>;
 /** A validation issue reported by a Standard Schema-compatible schema. */
@@ -284,28 +285,39 @@ const mapError: {
 });
 
 const tryRecover: {
+  <A, E, F extends AnyResult>(result: Result<A, E>, fn: (e: E) => F): Result<A | InferOk<F>, CallbackError<F>>;
   <A, E, E2, B = A>(result: Result<A, E>, fn: (e: E) => Result<B, E2>): Result<A | B, E2>;
+  <E, F extends AnyResult>(fn: (e: E) => F): <A>(result: Result<A, E>) => Result<A | InferOk<F>, CallbackError<F>>;
   <E, E2>(fn: (e: E) => Result<never, E2>): <A>(result: Result<A, E>) => Result<A, E2>;
   <E, B, E2>(fn: (e: E) => Result<B, E2>): <A>(result: Result<A, E>) => Result<A | B, E2>;
 } = dual(
   2,
-  <A, E, E2, B = A>(result: Result<A, E>, fn: (e: E) => Result<B, E2>): Result<A | B, E2> => {
+  <A, E, F extends AnyResult>(result: Result<A, E>, fn: (e: E) => F): Result<A | InferOk<F>, CallbackError<F>> => {
     return result.tryRecover(fn);
   },
 );
 
 const andThen: {
+  <A, E, F extends AnyResult>(result: Result<A, E>, fn: (a: A) => F): Result<InferOk<F>, E | CallbackError<F>>;
   <A, B, E, E2>(result: Result<A, E>, fn: (a: A) => Result<B, E2>): Result<B, E | E2>;
+  <A, F extends AnyResult>(fn: (a: A) => F): <E>(result: Result<A, E>) => Result<InferOk<F>, E | CallbackError<F>>;
   <A, B, E2>(fn: (a: A) => Result<B, E2>): <E>(result: Result<A, E>) => Result<B, E | E2>;
-} = dual(2, <A, B, E, E2>(result: Result<A, E>, fn: (a: A) => Result<B, E2>): Result<B, E | E2> => {
+} = dual(2, <A, E, F extends AnyResult>(result: Result<A, E>, fn: (a: A) => F): Result<InferOk<F>, E | CallbackError<F>> => {
   return result.andThen(fn);
 });
 
 const tryRecoverAsync: {
+  <A, E, F extends AnyResult>(
+    result: Result<A, E>,
+    fn: (e: E) => Promise<F>,
+  ): Promise<Result<A | InferOk<F>, CallbackError<F>>>;
   <A, E, E2, B = A>(
     result: Result<A, E>,
     fn: (e: E) => Promise<Result<B, E2>>,
   ): Promise<Result<A | B, E2>>;
+  <E, F extends AnyResult>(
+    fn: (e: E) => Promise<F>,
+  ): <A>(result: Result<A, E>) => Promise<Result<A | InferOk<F>, CallbackError<F>>>;
   <E, E2>(
     fn: (e: E) => Promise<Result<never, E2>>,
   ): <A>(result: Result<A, E>) => Promise<Result<A, E2>>;
@@ -314,28 +326,35 @@ const tryRecoverAsync: {
   ): <A>(result: Result<A, E>) => Promise<Result<A | B, E2>>;
 } = dual(
   2,
-  <A, E, E2, B = A>(
+  <A, E, F extends AnyResult>(
     result: Result<A, E>,
-    fn: (e: E) => Promise<Result<B, E2>>,
-  ): Promise<Result<A | B, E2>> => {
+    fn: (e: E) => Promise<F>,
+  ): Promise<Result<A | InferOk<F>, CallbackError<F>>> => {
     return result.tryRecoverAsync(fn);
   },
 );
 
 const andThenAsync: {
+  <A, E, F extends AnyResult>(
+    result: Result<A, E>,
+    fn: (a: A) => Promise<F>,
+  ): Promise<Result<InferOk<F>, E | CallbackError<F>>>;
   <A, B, E, E2>(
     result: Result<A, E>,
     fn: (a: A) => Promise<Result<B, E2>>,
   ): Promise<Result<B, E | E2>>;
+  <A, F extends AnyResult>(
+    fn: (a: A) => Promise<F>,
+  ): <E>(result: Result<A, E>) => Promise<Result<InferOk<F>, E | CallbackError<F>>>;
   <A, B, E2>(
     fn: (a: A) => Promise<Result<B, E2>>,
   ): <E>(result: Result<A, E>) => Promise<Result<B, E | E2>>;
 } = dual(
   2,
-  <A, B, E, E2>(
+  <A, E, F extends AnyResult>(
     result: Result<A, E>,
-    fn: (a: A) => Promise<Result<B, E2>>,
-  ): Promise<Result<B, E | E2>> => {
+    fn: (a: A) => Promise<F>,
+  ): Promise<Result<InferOk<F>, E | CallbackError<F>>> => {
     return result.andThenAsync(fn);
   },
 );
