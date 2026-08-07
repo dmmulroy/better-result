@@ -1191,6 +1191,31 @@ describe("Result", () => {
       expect(dataFirst.unwrap()).toBe(4);
       expect(dataLast.unwrap()).toBe(4);
     });
+
+    it("unions the error types of a multi-branch recovery callback (regression)", () => {
+      // The exact shape that used to collapse E2 to one branch: a
+      // multi-statement callback whose last path throws.
+      const result = Result.tryRecover(Result.err<number, "boom">("boom"), (e) => {
+        if (e === "boom") return Result.err<never, "slug-taken">("slug-taken");
+        if (e === "other") return Result.err<never, "not-found">("not-found");
+        throw e;
+      });
+
+      // E2 must be the union of every branch the callback can produce, not the
+      // first branch only — a collapsed E2 would lie about the error surface.
+      expectTypeOf(result).toEqualTypeOf<Result<number, "slug-taken" | "not-found">>();
+    });
+
+    it("unions the error types of a multi-branch andThen callback (regression)", () => {
+      const result = Result.ok(1).andThen((value) => {
+        if (value > 0) return Result.err<never, "slug-taken">("slug-taken");
+        return Result.err<never, "not-found">("not-found");
+      });
+
+      // The receiver's error lane joins the callback's union — same collapse
+      // category as tryRecover, same fix.
+      expectTypeOf(result).toEqualTypeOf<Result<never, "slug-taken" | "not-found">>();
+    });
   });
 
   describe("tryRecoverAsync", () => {
@@ -3536,6 +3561,8 @@ describe("Type Inference", () => {
         const mappedError = myResult.mapError<string>((error) => error._tag);
         expectTypeOf(mappedError).toEqualTypeOf<Result<{ name: string }, string>>();
 
+        // Explicit type arguments remain supported (v3 public API); inference
+        // is now the default path for unannotated callbacks.
         const chained = myResult.andThen<string, ErrorB>((value) =>
           Result.ok<string, ErrorB>(value.name),
         );
@@ -3582,8 +3609,10 @@ describe("Type Inference", () => {
         const okRecovered = okDirect.tryRecover(() => Result.ok(123));
         expectTypeOf(okRecovered).toEqualTypeOf<Ok<string, never>>();
 
+        // The recovery result is the callback's exact type — no impossible
+        // Err member is synthesized into it anymore.
         const errRecovered = errDirect.tryRecover(() => Result.ok(123));
-        expectTypeOf(errRecovered).toEqualTypeOf<Result<number, never>>();
+        expectTypeOf(errRecovered).toEqualTypeOf<Ok<number, never>>();
       };
 
       expect(typeof compileTimeOnly).toBe("function");
