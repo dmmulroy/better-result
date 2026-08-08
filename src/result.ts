@@ -285,26 +285,45 @@ const mapError: {
 });
 
 const tryRecover: {
-  <A, E, F extends AnyResult>(result: Result<A, E>, fn: (e: E) => F): Result<A | InferOk<F>, CallbackError<F>>;
+  <A, E, F extends AnyResult>(
+    result: Result<A, E>,
+    fn: (e: E) => F,
+  ): Result<A | InferOk<F>, CallbackError<F>>;
   <A, E, E2, B = A>(result: Result<A, E>, fn: (e: E) => Result<B, E2>): Result<A | B, E2>;
-  <E, F extends AnyResult>(fn: (e: E) => F): <A>(result: Result<A, E>) => Result<A | InferOk<F>, CallbackError<F>>;
+  <E, F extends AnyResult>(
+    fn: (e: E) => F,
+  ): <A>(result: Result<A, E>) => Result<A | InferOk<F>, CallbackError<F>>;
   <E, E2>(fn: (e: E) => Result<never, E2>): <A>(result: Result<A, E>) => Result<A, E2>;
   <E, B, E2>(fn: (e: E) => Result<B, E2>): <A>(result: Result<A, E>) => Result<A | B, E2>;
 } = dual(
   2,
-  <A, E, F extends AnyResult>(result: Result<A, E>, fn: (e: E) => F): Result<A | InferOk<F>, CallbackError<F>> => {
+  <A, E, F extends AnyResult>(
+    result: Result<A, E>,
+    fn: (e: E) => F,
+  ): Result<A | InferOk<F>, CallbackError<F>> => {
     return result.tryRecover(fn);
   },
 );
 
 const andThen: {
-  <A, E, F extends AnyResult>(result: Result<A, E>, fn: (a: A) => F): Result<InferOk<F>, E | CallbackError<F>>;
+  <A, E, F extends AnyResult>(
+    result: Result<A, E>,
+    fn: (a: A) => F,
+  ): Result<InferOk<F>, E | CallbackError<F>>;
   <A, B, E, E2>(result: Result<A, E>, fn: (a: A) => Result<B, E2>): Result<B, E | E2>;
-  <A, F extends AnyResult>(fn: (a: A) => F): <E>(result: Result<A, E>) => Result<InferOk<F>, E | CallbackError<F>>;
+  <A, F extends AnyResult>(
+    fn: (a: A) => F,
+  ): <E>(result: Result<A, E>) => Result<InferOk<F>, E | CallbackError<F>>;
   <A, B, E2>(fn: (a: A) => Result<B, E2>): <E>(result: Result<A, E>) => Result<B, E | E2>;
-} = dual(2, <A, E, F extends AnyResult>(result: Result<A, E>, fn: (a: A) => F): Result<InferOk<F>, E | CallbackError<F>> => {
-  return result.andThen(fn);
-});
+} = dual(
+  2,
+  <A, E, F extends AnyResult>(
+    result: Result<A, E>,
+    fn: (a: A) => F,
+  ): Result<InferOk<F>, E | CallbackError<F>> => {
+    return result.andThen(fn);
+  },
+);
 
 const tryRecoverAsync: {
   <A, E, F extends AnyResult>(

@@ -134,7 +134,7 @@ type MapErrorReturn<R, E2> =
  * Return type for recovery that widens success unions while preserving
  * concrete variant precision. `F` is the callback's *whole* return type —
  * capturing it as one type parameter keeps TS from pinning the error lane to
- * the first branch of a multi-statement callback; `CallbackError<F>`
+ * one branch of a multi-statement callback; `CallbackError<F>`
  * distributes the union afterwards.
  */
 type TryRecoverReturn<R, F> =
@@ -149,8 +149,8 @@ type TryRecoverReturn<R, F> =
 /**
  * Return type for andThen that preserves concrete variants but prints public
  * Result for Result unions. `F` captures the callback's whole return type so
- * the error lane is distributed afterwards instead of being pinned to the
- * first branch of a multi-statement callback.
+ * the error lane is distributed afterwards instead of being pinned to one
+ * branch of a multi-statement callback.
  */
 type AndThenReturn<R, F> =
   IsUnion<R> extends true
@@ -283,7 +283,9 @@ export class Ok<A, E = never> {
     this: R,
     _fn: (e: InferErr<R>) => Promise<Result<B, E2>>,
   ): Promise<TryRecoverReturn<R, Result<B, E2>>>;
-  tryRecoverAsync<F extends AnyResult>(_fn: (e: never) => Promise<F>): Promise<Ok<A, CallbackError<F>>> {
+  tryRecoverAsync<F extends AnyResult>(
+    _fn: (e: never) => Promise<F>,
+  ): Promise<Ok<A, CallbackError<F>>> {
     // SAFETY: E is phantom on Ok (not used at runtime).
     return Promise.resolve(this as unknown as Ok<A, CallbackError<F>>);
   }
@@ -300,7 +302,10 @@ export class Ok<A, E = never> {
    * @example
    * ok(2).andThen(x => x > 0 ? ok(x) : err("negative")) // Ok(2)
    */
-  andThen<F extends AnyResult>(this: Ok<A, E>, fn: (a: A) => F): Result<InferOk<F>, E | CallbackError<F>>;
+  andThen<F extends AnyResult>(
+    this: Ok<A, E>,
+    fn: (a: A) => F,
+  ): Result<InferOk<F>, E | CallbackError<F>>;
   andThen<B, E2>(this: Ok<A, E>, fn: (a: A) => Result<B, E2>): Result<B, E | E2>;
   andThen<F extends AnyResult, R extends AnyResult>(
     this: R,
@@ -347,7 +352,9 @@ export class Ok<A, E = never> {
     this: R,
     fn: (a: InferOk<R>) => Promise<Result<B, E2>>,
   ): Promise<AndThenReturn<R, Result<B, E2>>>;
-  andThenAsync<F extends AnyResult>(fn: (a: A) => Promise<F>): Promise<Result<InferOk<F>, E | CallbackError<F>>> {
+  andThenAsync<F extends AnyResult>(
+    fn: (a: A) => Promise<F>,
+  ): Promise<Result<InferOk<F>, E | CallbackError<F>>> {
     // SAFETY: F is the callback's own Result type; `Result<InferOk<F>, E | CallbackError<F>>`
     // is the same value re-summarized with the receiver's error lane joined in.
     return tryOrPanicAsync(() => fn(this.value), "andThenAsync callback threw") as Promise<
@@ -613,10 +620,7 @@ export class Err<T, E> {
    * @example
    * await err<number, string>("missing").tryRecoverAsync(async e => e === "missing" ? ok("fallback") : err(new Error(e))) // Ok("fallback")
    */
-  tryRecoverAsync<F extends AnyResult>(
-    this: Err<T, E>,
-    fn: (e: E) => Promise<F>,
-  ): Promise<F>;
+  tryRecoverAsync<F extends AnyResult>(this: Err<T, E>, fn: (e: E) => Promise<F>): Promise<F>;
   tryRecoverAsync<E2, B = T>(
     this: Err<T, E>,
     fn: (e: E) => Promise<Result<B, E2>>,
@@ -641,7 +645,10 @@ export class Err<T, E> {
    * @param _fn Ignored.
    * @returns Self.
    */
-  andThen<F extends AnyResult>(this: Err<T, E>, _fn: (a: never) => F): Err<InferOk<F>, E | CallbackError<F>>;
+  andThen<F extends AnyResult>(
+    this: Err<T, E>,
+    _fn: (a: never) => F,
+  ): Err<InferOk<F>, E | CallbackError<F>>;
   andThen<U, E2>(this: Err<T, E>, _fn: (a: never) => Result<U, E2>): Err<U, E | E2>;
   andThen<F extends AnyResult, R extends AnyResult>(
     this: R,
@@ -680,7 +687,9 @@ export class Err<T, E> {
     this: R,
     _fn: (a: InferOk<R>) => Promise<Result<U, E2>>,
   ): Promise<AndThenReturn<R, Result<U, E2>>>;
-  andThenAsync<F extends AnyResult>(_fn: (a: never) => Promise<F>): Promise<Err<InferOk<F>, E | CallbackError<F>>> {
+  andThenAsync<F extends AnyResult>(
+    _fn: (a: never) => Promise<F>,
+  ): Promise<Err<InferOk<F>, E | CallbackError<F>>> {
     // SAFETY: T is phantom, E⊂(E|CallbackError<F>) so error type widens safely.
     return Promise.resolve(this as unknown as Err<InferOk<F>, E | CallbackError<F>>);
   }

@@ -1191,31 +1191,6 @@ describe("Result", () => {
       expect(dataFirst.unwrap()).toBe(4);
       expect(dataLast.unwrap()).toBe(4);
     });
-
-    it("unions the error types of a multi-branch recovery callback (regression)", () => {
-      // The exact shape that used to collapse E2 to one branch: a
-      // multi-statement callback whose last path throws.
-      const result = Result.tryRecover(Result.err<number, "boom">("boom"), (e) => {
-        if (e === "boom") return Result.err<never, "slug-taken">("slug-taken");
-        if (e === "other") return Result.err<never, "not-found">("not-found");
-        throw e;
-      });
-
-      // E2 must be the union of every branch the callback can produce, not the
-      // first branch only — a collapsed E2 would lie about the error surface.
-      expectTypeOf(result).toEqualTypeOf<Result<number, "slug-taken" | "not-found">>();
-    });
-
-    it("unions the error types of a multi-branch andThen callback (regression)", () => {
-      const result = Result.ok(1).andThen((value) => {
-        if (value > 0) return Result.err<never, "slug-taken">("slug-taken");
-        return Result.err<never, "not-found">("not-found");
-      });
-
-      // The receiver's error lane joins the callback's union — same collapse
-      // category as tryRecover, same fix.
-      expectTypeOf(result).toEqualTypeOf<Result<never, "slug-taken" | "not-found">>();
-    });
   });
 
   describe("tryRecoverAsync", () => {
@@ -3312,6 +3287,81 @@ describe("Type Inference", () => {
   class ErrorC extends Error {
     readonly _tag = "ErrorC" as const;
   }
+
+  describe("Result-returning callback unions", () => {
+    // Mirrors wrappers that deliberately expose the public Result union instead
+    // of better-result's concrete Err return type.
+    const errorResult = <E>(error: E): Result<never, E> => Result.err(error);
+    const recoverable = (): Result<number, "boom" | "other"> => Result.err("boom");
+    const chainable = (): Result<number, ErrorC> => Result.ok(1);
+
+    const recover = (error: "boom" | "other") => {
+      if (error === "boom") return errorResult(new ErrorA());
+      if (error === "other") return errorResult(new ErrorB());
+      throw error;
+    };
+
+    const chain = (value: number) =>
+      value > 0 ? errorResult(new ErrorA()) : errorResult(new ErrorB());
+
+    it("unions structured error types across synchronous callback branches", () => {
+      const dataFirstRecovered = Result.tryRecover(recoverable(), recover);
+      const methodRecovered = recoverable().tryRecover(recover);
+      const dataLastRecovered = Result.tryRecover(recover)(recoverable());
+
+      expectTypeOf(dataFirstRecovered).toEqualTypeOf<Result<number, ErrorA | ErrorB>>();
+      expectTypeOf(methodRecovered).toEqualTypeOf<Result<number, ErrorA | ErrorB>>();
+      expectTypeOf(dataLastRecovered).toEqualTypeOf<Result<number, ErrorA | ErrorB>>();
+
+      const dataFirstChained = Result.andThen(chainable(), chain);
+      const methodChained = chainable().andThen(chain);
+      const dataLastChained = Result.andThen(chain)(chainable());
+
+      expectTypeOf(dataFirstChained).toEqualTypeOf<Result<never, ErrorA | ErrorB | ErrorC>>();
+      expectTypeOf(methodChained).toEqualTypeOf<Result<never, ErrorA | ErrorB | ErrorC>>();
+      expectTypeOf(dataLastChained).toEqualTypeOf<Result<never, ErrorA | ErrorB | ErrorC>>();
+    });
+
+    it("unions structured error types across asynchronous callback branches", async () => {
+      const recoverAsync = async (error: "boom" | "other") => recover(error);
+      const chainAsync = async (value: number) => chain(value);
+
+      const dataFirstRecovered = Result.tryRecoverAsync(recoverable(), recoverAsync);
+      const methodRecovered = recoverable().tryRecoverAsync(recoverAsync);
+      const dataLastRecovered = Result.tryRecoverAsync(recoverAsync)(recoverable());
+
+      expectTypeOf(dataFirstRecovered).toEqualTypeOf<Promise<Result<number, ErrorA | ErrorB>>>();
+      expectTypeOf(methodRecovered).toEqualTypeOf<Promise<Result<number, ErrorA | ErrorB>>>();
+      expectTypeOf(dataLastRecovered).toEqualTypeOf<Promise<Result<number, ErrorA | ErrorB>>>();
+
+      const dataFirstChained = Result.andThenAsync(chainable(), chainAsync);
+      const methodChained = chainable().andThenAsync(chainAsync);
+      const dataLastChained = Result.andThenAsync(chainAsync)(chainable());
+
+      expectTypeOf(dataFirstChained).toEqualTypeOf<
+        Promise<Result<never, ErrorA | ErrorB | ErrorC>>
+      >();
+      expectTypeOf(methodChained).toEqualTypeOf<Promise<Result<never, ErrorA | ErrorB | ErrorC>>>();
+      expectTypeOf(dataLastChained).toEqualTypeOf<
+        Promise<Result<never, ErrorA | ErrorB | ErrorC>>
+      >();
+
+      await Promise.all([
+        dataFirstRecovered,
+        methodRecovered,
+        dataLastRecovered,
+        dataFirstChained,
+        methodChained,
+        dataLastChained,
+      ]);
+    });
+
+    it("preserves a phantom error lane from an Ok callback", () => {
+      const result = Result.ok<number, ErrorC>(1).andThen(() => Result.ok<string, ErrorA>("done"));
+
+      expectTypeOf(result).toEqualTypeOf<Result<string, ErrorA | ErrorC>>();
+    });
+  });
 
   describe("tryPromise retry jitter config", () => {
     it("preserves return and callback inference through both overloads", () => {
