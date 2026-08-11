@@ -1,6 +1,7 @@
 export { Result, Ok, Err } from "./result";
 export type {
   CallbackError,
+  CallbackSuccess,
   InferOk,
   InferErr,
   ResultCodec,

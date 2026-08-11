@@ -3361,6 +3361,34 @@ describe("Type Inference", () => {
 
       expectTypeOf(result).toEqualTypeOf<Result<string, ErrorA | ErrorC>>();
     });
+
+    it("preserves a phantom success lane from an Err callback", async () => {
+      const callback = () => Result.err<number, ErrorA>(new ErrorA());
+      const callbackAsync = async () => callback();
+      const input = (): Result<string, ErrorC> => Result.ok("start");
+
+      const dataFirst = Result.andThen(input(), callback);
+      const method = input().andThen(callback);
+      const dataLast = Result.andThen(callback)(input());
+      const asyncResult = Result.andThenAsync(input(), callbackAsync);
+      const recovered = Result.tryRecover(Result.err<string, ErrorC>(new ErrorC()), callback);
+      const recoveredAsync = Result.tryRecoverAsync(
+        Result.err<string, ErrorC>(new ErrorC()),
+        callbackAsync,
+      );
+
+      expectTypeOf(dataFirst).toEqualTypeOf<Result<number, ErrorA | ErrorC>>();
+      expectTypeOf(method).toEqualTypeOf<Result<number, ErrorA | ErrorC>>();
+      expectTypeOf(dataLast).toEqualTypeOf<Result<number, ErrorA | ErrorC>>();
+      expectTypeOf(asyncResult).toEqualTypeOf<Promise<Result<number, ErrorA | ErrorC>>>();
+      expectTypeOf(recovered).toEqualTypeOf<Result<string | number, ErrorA>>();
+      expectTypeOf(recoveredAsync).toEqualTypeOf<Promise<Result<string | number, ErrorA>>>();
+
+      // This follow-up chain compiles on v3 and catches a dropped phantom lane:
+      // CallbackSuccess<Err<number, ErrorA>> must be number, not never.
+      method.andThen((value) => Result.ok(value.toFixed()));
+      await Promise.all([asyncResult, recoveredAsync]);
+    });
   });
 
   describe("tryPromise retry jitter config", () => {
@@ -3659,10 +3687,13 @@ describe("Type Inference", () => {
         const okRecovered = okDirect.tryRecover(() => Result.ok(123));
         expectTypeOf(okRecovered).toEqualTypeOf<Ok<string, never>>();
 
-        // The recovery result is the callback's exact type — no impossible
-        // Err member is synthesized into it anymore.
+        // Preserve the v3 public Result shape even though this concrete Err
+        // always invokes a callback that returns Ok.
         const errRecovered = errDirect.tryRecover(() => Result.ok(123));
-        expectTypeOf(errRecovered).toEqualTypeOf<Ok<number, never>>();
+        expectTypeOf(errRecovered).toEqualTypeOf<Result<number, never>>();
+
+        const errRecoveredAsync = errDirect.tryRecoverAsync(async () => Result.ok(123));
+        expectTypeOf(errRecoveredAsync).toEqualTypeOf<Promise<Result<number, never>>>();
       };
 
       expect(typeof compileTimeOnly).toBe("function");
